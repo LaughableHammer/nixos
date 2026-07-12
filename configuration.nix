@@ -117,6 +117,7 @@
 
   # Install firefox.
   programs.firefox.enable = true;
+  programs.firefox.nativeMessagingHosts.packages = [ pkgs.firefoxpwa ];
   # Install hyprland
   programs.hyprland.enable = true;
   
@@ -137,6 +138,7 @@
     neovim
     git
     limine-full
+    firefoxpwa
   ];
 
   # Some programs need SUID wrappers, can be configured further or are

@@ -61,5 +61,24 @@
     "autoopen/enabled" = false;
     "autorun/enabled" = false;
   };
+
+  programs.firefoxpwa = {
+    enable = true;
+    settings = {
+      "global.show_update_notifications" = true;
+    };
+    profiles."01ARZ3NDEKTSV4RRFFQ69G5FAV" = {
+      name = "default";
+      sites."01BX5ZZKBKACTAV9WEVGEMMVRZ" = {
+        name = "Notion";
+        url = "https://app.notion.com";
+        manifestUrl = "https://www.notion.so/path/to/manifest.json"; # from step above
+        desktopEntry.icon = pkgs.fetchurl {
+          url = "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png";
+          sha256 = "sha256-2oAdZZ2JFjIODXbIxiFU6XodRPcXYvKhjRyMGFYk1b4=";
+        };
+      };
+    };
+  };
 }
 
