@@ -262,3 +262,26 @@ hl.bind("mouse:275", hl.dsp.focus({ workspace = "e-1" }), { mouse = true })
 -- Cursor
 hl.env("HYPRCURSOR_THEME", "Future-Cyan-Hyprcursor_Theme")
 hl.env("HYPRCURSOR_SIZE", "32")
+
+-- ================================================================
+-- FUNCTION KEY MEDIA CONTROLS
+-- Mirrors ThinkPad/Framework-style F-row convention:
+-- F1/F2 = brightness down/up, F3 = mute, F5/F6 = volume down/up,
+-- F7/F8/F9 = prev/play-pause/next. Routed through the same
+-- Noctalia IPC / playerctl commands as the XF86 binds above.
+-- ================================================================
+hl.bind("F1", hl.dsp.exec_cmd("noctalia msg brightness-down"), { locked = true, repeating = true, description = "Brightness Down" })
+hl.bind("F2", hl.dsp.exec_cmd("noctalia msg brightness-up"), { locked = true, repeating = true, description = "Brightness Up" })
+hl.bind("F3", hl.dsp.exec_cmd("noctalia msg volume-mute"), { locked = true, description = "Mute Toggle" })
+hl.bind("F5", hl.dsp.exec_cmd("noctalia msg volume-down"), { locked = true, repeating = true, description = "Volume Down" })
+hl.bind("F6", hl.dsp.exec_cmd("noctalia msg volume-up"), { locked = true, repeating = true, description = "Volume Up" })
+hl.bind("F7", hl.dsp.exec_cmd("noctalia msg media previous"), { locked = true, description = "Previous Track" })
+hl.bind("F8", hl.dsp.exec_cmd("noctalia msg media toggle"), { locked = true, description = "Play Pause" })
+hl.bind("F9", hl.dsp.exec_cmd("noctalia msg media next"), { locked = true, description = "Next Track" })
+
+-- ================================================================
+-- SCREENGRAB — END KEY
+-- Bare End key triggers a full-output screenshot, saved the same
+-- way as your existing SUPER+CTRL+S bind.
+-- ================================================================
+hl.bind("End", hl.dsp.exec_cmd("hyprshot -m output -o $HOME/Pictures/ScreenShots"), { description = "Screenshot Output (End)" })
