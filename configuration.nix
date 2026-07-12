@@ -29,12 +29,15 @@
   };
   boot.loader.efi.canTouchEfiVariables = true;
 
-  # https://wiki.hypr.land/Nix/Cachix/
   nix.settings = {
+    # https://wiki.hypr.land/Nix/Cachix/
     substituters = ["https://hyprland.cachix.org"];
     trusted-substituters = ["https://hyprland.cachix.org"];
     trusted-public-keys = ["hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="];
     trusted-users = ["root" "@wheel"];
+    # https://docs.noctalia.dev/v5/getting-started/nixos/?section=binary-cache#binary-cache
+    extra-substituters = [ "https://noctalia.cachix.org" ];
+    extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
   };
 
   # Noctalia
@@ -110,19 +113,20 @@
     isNormalUser = true;
     description = "Laughable Hammer";
     extraGroups = [ "networkmanager" "wheel" ];
-    packages = with pkgs; [
-    #  thunderbird
-      vesktop
-    ];
   };
 
   # Install firefox.
   programs.firefox.enable = true;
   # Install hyprland
   programs.hyprland.enable = true;
+  
+  services.gvfs.enable = true;
+  services.udisks2.enable = true;
 
   # Allow unfree packages
-  #nixpkgs.config.allowUnfree = true;
+  nixpkgs.config.allowUnfree = true;
+  # Allow unsupported system
+  #nixpkgs.config.allowUnsupportedSystem = true;
 
   # List packages installed in system profile. To search, run:
   # $ nix search wget
