@@ -13,6 +13,10 @@
     thunderbird
     spotify
     xfce.xfconf
+    gnumake
+    gcc
+    swayimg
+    proton-vpn
   ];
 
   # Hyprland
@@ -48,7 +52,8 @@
       };
       wallpaper = {
         enabled = true;
-        default.path = "/path/to/wallpapers/wallpaper.png";
+        directory = "/home/laughablahammer/Wallpapers";
+        default.path = "/home/laughablehammer/Wallpapers/shark.jpeg";
       };
     };
   };

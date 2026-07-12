@@ -25,6 +25,9 @@ hl.config({
       passes = 2,
       vibrancy = 0.1696,
     },
+    active_opacity = 0.99,
+    inactive_opacity = 0.90,
+    fullscreen_opacity = 1.0,
   },
 })
 
@@ -50,6 +53,11 @@ hl.workspace_rule({ workspace = "3", monitor = "DP-2", persistent = true })
 hl.workspace_rule({ workspace = "4", monitor = "DP-2", persistent = true })
 hl.workspace_rule({ workspace = "5", monitor = "DP-2", persistent = true })
 
+hl.workspace_rule({ workspace = "6", monitor = "HDMI-A-1", persistent = true })
+hl.workspace_rule({ workspace = "7", monitor = "HDMI-A-1", persistent = true })
+hl.workspace_rule({ workspace = "8", monitor = "HDMI-A-1", persistent = true })
+hl.workspace_rule({ workspace = "9", monitor = "HDMI-A-1", persistent = true })
+hl.workspace_rule({ workspace = "10", monitor = "HDMI-A-1", persistent = true })
 -- ================================================================
 -- Noctalia: window / layer rules
 -- ================================================================
@@ -85,7 +93,7 @@ hl.bind(modifier .. " + CTRL + L", hl.dsp.exec_cmd("noctalia msg session lock"),
 hl.bind(modifier .. " + SHIFT + W", hl.dsp.exec_cmd("noctalia msg panel-toggle wallpaper"), { description = "Noctalia Wallpaper" })
 hl.bind(modifier .. " + X", hl.dsp.exec_cmd("noctalia msg panel-toggle session"), { description = "Noctalia Power Menu" })
 hl.bind(modifier .. " + C", hl.dsp.exec_cmd("noctalia msg panel-toggle control-center"), { description = "Noctalia Control Center" })
-hl.bind(modifier .. " + CTRL + R", hl.dsp.exec_cmd("noctalia msg screenshot-region"), { description = "Noctalia Screenshot Region" })
+hl.bind(modifier .. " + SHIFT + S", hl.dsp.exec_cmd("noctalia msg screenshot-region"), { description = "Noctalia Screenshot Region" })
 hl.bind(modifier .. " + SHIFT + R", hl.dsp.exec_cmd("restart.noctalia"), { description = "Restart Noctalia Shell" })
 hl.bind(modifier .. " + Space", hl.dsp.exec_cmd("noctalia msg panel-toggle launcher"), { description = "Noctalia Launcher (Space)" })
 
@@ -106,7 +114,7 @@ hl.bind(modifier .. " + Return", hl.dsp.exec_cmd("kitty"), { description = "Term
 hl.bind(modifier .. " + K", hl.dsp.exec_cmd("qs-keybinds"), { description = "Keybinds Search Tool" })
 hl.bind(modifier .. " + CTRL + C", hl.dsp.exec_cmd("qs-cheatsheets"), { description = "Cheatsheets Viewer" })
 hl.bind(modifier .. " + SHIFT + K", hl.dsp.exec_cmd("qs-keybinds"), { description = "Keybinds Search Tool" })
-hl.bind(modifier .. " + SHIFT + D", hl.dsp.exec_cmd("discord"), { description = "Discord" })
+hl.bind(modifier .. " + SHIFT + D", hl.dsp.exec_cmd("vesktop"), { description = "Vesktop" })
 hl.bind(modifier .. " + ALT + W", hl.dsp.exec_cmd("web-search"), { description = "Web Search" })
 hl.bind(modifier .. " + SHIFT + N", hl.dsp.exec_cmd("swaync-client -rs"), { description = "Notification Reset" })
 hl.bind(modifier .. " + W", hl.dsp.exec_cmd("firefox"), { description = "Web Browser" })
