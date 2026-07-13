@@ -17,6 +17,7 @@
     gcc
     swayimg
     proton-vpn
+    satty
   ];
 
   # Hyprland

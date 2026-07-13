@@ -78,6 +78,13 @@ hl.layer_rule({
   blur_popups = true,
 })
 
+hl.window_rule({
+  match = { class = "com.gabm.satty" },
+  float = true,
+  center = true,
+  pin = true,
+})
+
 local modifier = "SUPER"
 
 -- ================================================================
@@ -120,7 +127,7 @@ hl.bind(modifier .. " + SHIFT + N", hl.dsp.exec_cmd("swaync-client -rs"), { desc
 hl.bind(modifier .. " + W", hl.dsp.exec_cmd("firefox"), { description = "Web Browser" })
 hl.bind(modifier .. " + Y", hl.dsp.exec_cmd("kitty -e yazi"), { description = "File Manager" })
 hl.bind(modifier .. " + E", hl.dsp.exec_cmd("emopicker9000"), { description = "Emoji Picker" })
-hl.bind(modifier .. " + S", hl.dsp.exec_cmd("screenshootin"), { description = "Screenshot" })
+hl.bind(modifier .. " + S", hl.dsp.exec_cmd("flameshot"), { description = "Screenshot" })
 
 -- ================================================================
 -- SCREENSHOTS
