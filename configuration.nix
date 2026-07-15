@@ -16,10 +16,8 @@
     enable = true;
     efiInstallAsRemovable = true;
     enrollConfig = true;
-    panicOnChecksumMismatch = false;
-    maxGenerations = 20;
-    enableEditor = true;
-    secureBoot.enable = false;
+    maxGenerations = 10;
+    secureBoot.enable = true;
  
     extraEntries = ''
       /Windows 11
