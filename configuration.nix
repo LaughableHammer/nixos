@@ -122,6 +122,9 @@
   services.gvfs.enable = true;
   services.udisks2.enable = true;
 
+  # Enable Tumbler for thumbnail support
+  services.tumbler.enable = true;
+
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
   # Allow unsupported system
@@ -137,6 +140,7 @@
     git
     limine-full
     firefoxpwa
+    thunar
   ];
 
   # Some programs need SUID wrappers, can be configured further or are

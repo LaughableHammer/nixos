@@ -6,7 +6,6 @@
   home.packages = with pkgs; [
     kitty
     vscode-fhs
-    thunar
     thunar-volman
     gvfs
     vesktop
