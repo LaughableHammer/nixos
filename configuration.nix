@@ -110,7 +110,7 @@
   users.users."laughablehammer" = {
     isNormalUser = true;
     description = "Laughable Hammer";
-    extraGroups = [ "networkmanager" "wheel" ];
+    extraGroups = [ "networkmanager" "wheel" "libvirtd" ];
   };
 
   # Install firefox.
@@ -124,6 +124,12 @@
 
   # Enable Tumbler for thumbnail support
   services.tumbler.enable = true;
+
+  # VM Support
+  virtualisation.libvirtd.enable = true;
+  programs.virt-manager.enable = true;
+  services.qemuGuest.enable = true;
+  services.spice-vdagentd.enable = true;
 
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
