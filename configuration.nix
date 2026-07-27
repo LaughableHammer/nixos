@@ -52,7 +52,9 @@
 
   # Enable networking
   networking.networkmanager.enable = true;
-
+  networking.hosts = {
+    "152.67.115.112" = [ "oraclevm" ];
+  };
   # Set your time zone.
   time.timeZone = "Australia/Sydney";
 
@@ -147,6 +149,8 @@
     limine-full
     firefoxpwa
     thunar
+    nodejs_22
+    chromium
   ];
 
   # Some programs need SUID wrappers, can be configured further or are
