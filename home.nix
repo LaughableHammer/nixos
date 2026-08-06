@@ -17,6 +17,7 @@
     swayimg
     proton-vpn
     satty
+    libreoffice
   ];
 
   # Hyprland
