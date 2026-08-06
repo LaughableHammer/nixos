@@ -105,15 +105,15 @@
     #media-session.enable = true;
 
     # Stop applications from altering the global microphone volume
+    # If issue occurs again:
+    # nix-shell -p pulseaudio && pactl list source-outputs while using the application
+    # Add new line below for the application
     extraConfig.pipewire-pulse = {
       "99-block-source-volume" = {
         "pulse.rules" = [
           {
             matches = [
-              { "application.process.binary" = "Discord"; }
               { "application.process.binary" = "electron"; }
-              { "application.process.binary" = "vesktop"; }
-              { "application.process.binary" = "~Chromium.*"; }
             ];
             actions = {
               quirks = [ "block-source-volume" ];
