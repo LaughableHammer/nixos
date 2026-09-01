@@ -6,8 +6,6 @@
   home.packages = with pkgs; [
     kitty
     vscode-fhs
-    thunar-volman
-    gvfs
     vesktop
     thunderbird
     spotify
@@ -18,6 +16,7 @@
     proton-vpn
     satty
     libreoffice
+    nomacs
   ];
 
   # Hyprland

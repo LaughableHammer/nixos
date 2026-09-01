@@ -131,7 +131,7 @@
   users.users."laughablehammer" = {
     isNormalUser = true;
     description = "Laughable Hammer";
-    extraGroups = [ "networkmanager" "wheel" "libvirtd" ];
+    extraGroups = [ "networkmanager" "wheel" "libvirtd" "docker" ];
   };
 
   # Install firefox.
@@ -147,10 +147,17 @@
   services.tumbler.enable = true;
 
   # VM Support
-  virtualisation.libvirtd.enable = true;
+  virtualisation.libvirtd = {
+    enable = true;
+    qemu.vhostUserPackages = with pkgs; [
+      virtiofsd
+    ];
+  };
   programs.virt-manager.enable = true;
   services.qemuGuest.enable = true;
   services.spice-vdagentd.enable = true;
+
+  virtualisation.docker.enable = true;
 
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
@@ -167,10 +174,19 @@
     git
     limine-full
     firefoxpwa
-    thunar
     nodejs_22
     chromium
     dnsmasq
+    file-roller
+    zip
+    unzip
+    docker-compose
+  ];
+
+  programs.thunar.enable = true;
+  programs.thunar.plugins = with pkgs.xfce; [
+    thunar-archive-plugin
+    thunar-volman
   ];
 
   # Some programs need SUID wrappers, can be configured further or are
