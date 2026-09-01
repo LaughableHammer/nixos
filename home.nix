@@ -25,7 +25,22 @@
     package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
     portalPackage = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
     
-    extraConfig = builtins.readFile ./hl.lua;
+    # Concatenate the Hyprland Lua modules in a predictable order.
+    extraConfig = builtins.concatStringsSep "\n" (map builtins.readFile [
+      ./hyprland/autostart.lua
+      ./hyprland/appearance.lua
+      ./hyprland/monitors.lua
+      ./hyprland/workspaces.lua
+      ./hyprland/window-rules.lua
+      ./hyprland/keybinds-noctalia.lua
+      ./hyprland/keybinds-applications.lua
+      ./hyprland/keybinds-windows.lua
+      ./hyprland/keybinds-workspaces.lua
+      ./hyprland/keybinds-media.lua
+      ./hyprland/input.lua
+      ./hyprland/cursor.lua
+      ./hyprland/keybinds-screenshots.lua
+    ]);
   };
 
   # Hyprcursor
@@ -125,4 +140,3 @@
     };
   };
 }
-
