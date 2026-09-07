@@ -174,7 +174,6 @@
     git
     limine-full
     firefoxpwa
-    nodejs_22
     chromium
     dnsmasq
     file-roller
@@ -218,4 +217,3 @@
   system.stateVersion = "26.05"; # Did you read the comment?
 
 }
-
