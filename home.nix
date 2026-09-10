@@ -2,6 +2,7 @@
   inputs,
   pkgs,
   config,
+  hostHyprlandConfig ? [ ],
   ...
 }:
 {
@@ -105,21 +106,24 @@
   # Concatenate the Hyprland configuration fragments
   home.file.".config/hypr/hyprland.lua".text =
     builtins.concatStringsSep "\n" (
-      map builtins.readFile [
-        ./hyprland/autostart.lua
-        ./hyprland/appearance.lua
-        ./hyprland/monitors.lua
-        ./hyprland/workspaces.lua
-        ./hyprland/window-rules.lua
-        ./hyprland/keybinds-noctalia.lua
-        ./hyprland/keybinds-applications.lua
-        ./hyprland/keybinds-windows.lua
-        ./hyprland/keybinds-workspaces.lua
-        ./hyprland/keybinds-media.lua
-        ./hyprland/input.lua
-        ./hyprland/cursor.lua
-        ./hyprland/keybinds-screenshots.lua
-      ]
+      map builtins.readFile (
+        [
+          ./hyprland/autostart.lua
+          ./hyprland/appearance.lua
+        ]
+        ++ hostHyprlandConfig
+        ++ [
+          ./hyprland/window-rules.lua
+          ./hyprland/keybinds-noctalia.lua
+          ./hyprland/keybinds-applications.lua
+          ./hyprland/keybinds-windows.lua
+          ./hyprland/keybinds-workspaces.lua
+          ./hyprland/keybinds-media.lua
+          ./hyprland/input.lua
+          ./hyprland/cursor.lua
+          ./hyprland/keybinds-screenshots.lua
+        ]
+      )
     );
 
   # Hyprcursor

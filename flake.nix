@@ -14,19 +14,38 @@
     };
   };
 
-  outputs = { nixpkgs, home-manager, hyprland, ... }@inputs: {
-    nixosConfigurations.hammernix = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      specialArgs = { inherit inputs; };
-      modules = [
-        ./configuration.nix
-      	home-manager.nixosModules.home-manager {
-          home-manager.useGlobalPkgs = true;
-          home-manager.useUserPackages = true;
-          home-manager.extraSpecialArgs = { inherit inputs; };
-          home-manager.users."laughablehammer" = import ./home.nix;
-        }
-      ];
+  outputs =
+    inputs@{ nixpkgs, home-manager, ... }:
+    let
+      mkHost =
+        hostName:
+        let
+          hostPath = ./hosts + "/${hostName}";
+        in
+        nixpkgs.lib.nixosSystem {
+          specialArgs = { inherit inputs hostName; };
+          modules = [
+            ./configuration.nix
+            hostPath
+            { networking.hostName = hostName; }
+            home-manager.nixosModules.home-manager
+            {
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.extraSpecialArgs = { inherit inputs hostName; };
+              home-manager.users."laughablehammer" = {
+                imports = [
+                  ./home.nix
+                  (hostPath + "/home.nix")
+                ];
+              };
+            }
+          ];
+        };
+    in
+    {
+      nixosConfigurations = {
+        hammernix = mkHost "hammernix";
+      };
     };
-  };
 }

@@ -5,28 +5,6 @@
 { config, pkgs, inputs, ... }:
 
 {
-  imports =
-    [ # Include the results of the hardware scan.
-      ./hardware-configuration.nix
-    ];
-
-  # Bootloader.
-  boot.loader.systemd-boot.enable = false;
-  boot.loader.limine = { 
-    enable = true;
-    efiInstallAsRemovable = true;
-    enrollConfig = true;
-    maxGenerations = 10;
-    secureBoot.enable = true;
- 
-    extraEntries = ''
-      /Windows 11
-      protocol: efi
-      path: boot():/EFI/Microsoft/Boot/bootmgfw.efi
-    '';
-  };
-  boot.loader.efi.canTouchEfiVariables = true;
-
   nix.settings = {
     # https://wiki.hypr.land/Nix/Cachix/
     substituters = ["https://hyprland.cachix.org"];
@@ -43,7 +21,6 @@
   services.power-profiles-daemon.enable = true;
   services.upower.enable = true;
 
-  networking.hostName = "hammernix"; # Define your hostname.
   # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
 
   # Configure network proxy if necessary
