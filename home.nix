@@ -9,100 +9,6 @@
   imports = [ inputs.noctalia.homeModules.default ];
   home.stateVersion = "26.05";
 
-  home.packages = with pkgs; [
-    # JavaScript / TypeScript
-    nodejs_22
-    typescript
-    typescript-language-server
-    eslint
-    prettier
-    pnpm
-
-    # C / C++
-    gcc
-    clang-tools
-    gnumake
-    cmake
-    ninja
-    gdb
-    lldb
-    pkg-config
-
-    # Python
-    python3
-    uv
-
-    # General development tools
-    git
-    ripgrep
-    fd
-    jq
-    shellcheck
-    shfmt
-    nixd
-    nixfmt
-
-    # Desktop applications
-    kitty
-    vesktop
-    spotify
-    xfconf
-    swayimg
-    proton-vpn
-    satty
-    libreoffice
-    nomacs
-    slack
-    mpv
-  ];
-
-  # Use the normal VS Code package. Keep extensions mutable so the extensions
-  # already installed in ~/.vscode/extensions remain available.
-  programs.vscode = {
-    enable = true;
-    package = pkgs.vscode;
-    mutableExtensionsDir = true;
-    profiles.default.extensions =
-      with pkgs.vscode-extensions;
-      [
-        # JavaScript / TypeScript and web development
-        bradlc.vscode-tailwindcss
-        dbaeumer.vscode-eslint
-        ecmel.vscode-html-css
-        esbenp.prettier-vscode
-
-        # C / C++
-        llvm-vs-code-extensions.vscode-clangd
-        ms-vscode.cmake-tools
-        ms-vscode.cpptools
-        ms-vscode.makefile-tools
-
-        # Common formats and project tooling
-        editorconfig.editorconfig
-        github.vscode-github-actions
-        jnoortheen.nix-ide
-        redhat.vscode-yaml
-        tamasfe.even-better-toml
-      ]
-      ++ pkgs.vscode-utils.extensionsFromVscodeMarketplace [
-        {
-          # Current theme: "Celestial Echoes"
-          publisher = "jemo";
-          name = "celestial-echoes";
-          version = "0.0.7";
-          hash = "sha256-cccCmXUUMhMI8fzehgzYfewwwWEyDlWu3bHsurdNV0A=";
-        }
-      ];
-  };
-
-  programs.thunderbird = {
-    enable = true;
-    policies.Preferences."mail.shell.checkDefaultClient" = {
-      Value = false;
-      Status = "locked";
-    };
-  };
-
   # Concatenate the Hyprland configuration fragments
   home.file.".config/hypr/hyprland.lua".text =
     builtins.concatStringsSep "\n" (
@@ -149,34 +55,6 @@
   home.file.".local/state/noctalia/settings.toml" = {
     source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/nixos/noctalia-gui-overrides.toml";
     force = true;
-  };
-
-  xfconf.enable = true;
-  xfconf.settings."thunar-volman" = {
-    "autobrowse/enabled" = false;
-    "automount-drives/enabled" = false;
-    "automount-media/enabled" = false;
-    "autoopen/enabled" = false;
-    "autorun/enabled" = false;
-  };
-
-  programs.firefoxpwa = {
-    enable = true;
-    settings = {
-      "global.show_update_notifications" = true;
-    };
-    profiles."01ARZ3NDEKTSV4RRFFQ69G5FAV" = {
-      name = "default";
-      sites."01BX5ZZKBKACTAV9WEVGEMMVRZ" = {
-        name = "Notion";
-        url = "https://app.notion.com";
-        manifestUrl = "https://www.notion.so/path/to/manifest.json"; # from step above
-        desktopEntry.icon = pkgs.fetchurl {
-          url = "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png";
-          sha256 = "sha256-2oAdZZ2JFjIODXbIxiFU6XodRPcXYvKhjRyMGFYk1b4=";
-        };
-      };
-    };
   };
 
   gtk = {

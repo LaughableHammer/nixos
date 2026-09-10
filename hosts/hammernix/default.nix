@@ -1,7 +1,13 @@
 { ... }:
 
 {
-  imports = [ ./hardware-configuration.nix ];
+  imports = [
+    ./hardware-configuration.nix
+    ../../modules/nixos/software/system-tools.nix
+    ../../modules/nixos/software/desktop.nix
+    ../../modules/nixos/software/virtualisation.nix
+    ../../modules/nixos/software/secure-boot-tools.nix
+  ];
 
   boot.loader.systemd-boot.enable = false;
   boot.loader.limine = {

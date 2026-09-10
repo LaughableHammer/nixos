@@ -108,12 +108,9 @@
   users.users."laughablehammer" = {
     isNormalUser = true;
     description = "Laughable Hammer";
-    extraGroups = [ "networkmanager" "wheel" "libvirtd" "docker" ];
+    extraGroups = [ "networkmanager" "wheel" ];
   };
 
-  # Install firefox.
-  programs.firefox.enable = true;
-  programs.firefox.nativeMessagingHosts.packages = [ pkgs.firefoxpwa ];
   # Install Hyprland and its desktop portal system-wide. Home Manager owns the
   # user configuration file but does not install a second Hyprland package.
   programs.hyprland = {
@@ -123,53 +120,10 @@
       inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
   };
   
-  services.gvfs.enable = true;
-  services.udisks2.enable = true;
-
-  # Enable Tumbler for thumbnail support
-  services.tumbler.enable = true;
-
-  # VM Support
-  virtualisation.libvirtd = {
-    enable = true;
-    qemu.vhostUserPackages = with pkgs; [
-      virtiofsd
-    ];
-  };
-  programs.virt-manager.enable = true;
-  services.qemuGuest.enable = true;
-  services.spice-vdagentd.enable = true;
-
-  virtualisation.docker.enable = true;
-
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
   # Allow unsupported system
   #nixpkgs.config.allowUnsupportedSystem = true;
-
-  # List packages installed in system profile. To search, run:
-  # $ nix search wget
-  environment.systemPackages = with pkgs; [
-    vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
-    wget
-    sbctl
-    neovim
-    git
-    limine-full
-    firefoxpwa
-    chromium
-    dnsmasq
-    file-roller
-    zip
-    unzip
-    docker-compose
-  ];
-
-  programs.thunar.enable = true;
-  programs.thunar.plugins = with pkgs.xfce; [
-    thunar-archive-plugin
-    thunar-volman
-  ];
 
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
@@ -187,7 +141,6 @@
   # Open ports in the firewall.
   # networking.firewall.allowedTCPPorts = [ ... ];
   # networking.firewall.allowedUDPPorts = [ ... ];
-  networking.firewall.trustedInterfaces = [ "virbr0" ];
   # Or disable the firewall altogether.
   # networking.firewall.enable = false;
 
