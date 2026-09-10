@@ -2,11 +2,13 @@
   inputs,
   pkgs,
   config,
-  hostHyprlandConfig ? [ ],
   ...
 }:
 {
-  imports = [ inputs.noctalia.homeModules.default ];
+  imports = [
+    inputs.noctalia.homeModules.default
+    ./modules/home/hyprland
+  ];
   home.stateVersion = "26.05";
 
   # Concatenate the Hyprland configuration fragments
@@ -17,7 +19,7 @@
           ./hyprland/autostart.lua
           ./hyprland/appearance.lua
         ]
-        ++ hostHyprlandConfig
+        ++ config.my.hyprland.hostConfigFiles
         ++ [
           ./hyprland/window-rules.lua
           ./hyprland/keybinds-noctalia.lua

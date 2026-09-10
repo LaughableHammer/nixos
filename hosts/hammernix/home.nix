@@ -7,7 +7,7 @@
   ];
 
   # These fragments describe this computer's physical display arrangement.
-  _module.args.hostHyprlandConfig = [
+  my.hyprland.hostConfigFiles = [
     ./hyprland/monitors.lua
     ./hyprland/workspaces.lua
   ];
