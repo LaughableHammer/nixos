@@ -1,4 +1,9 @@
-{ inputs, pkgs, ... }:
+{
+  inputs,
+  pkgs,
+  config,
+  ...
+}:
 {
   imports = [ inputs.noctalia.homeModules.default ];
   home.stateVersion = "26.05";
@@ -57,58 +62,64 @@
     enable = true;
     package = pkgs.vscode;
     mutableExtensionsDir = true;
-    profiles.default.extensions = with pkgs.vscode-extensions; [
-      # JavaScript / TypeScript and web development
-      bradlc.vscode-tailwindcss
-      dbaeumer.vscode-eslint
-      ecmel.vscode-html-css
-      esbenp.prettier-vscode
+    profiles.default.extensions =
+      with pkgs.vscode-extensions;
+      [
+        # JavaScript / TypeScript and web development
+        bradlc.vscode-tailwindcss
+        dbaeumer.vscode-eslint
+        ecmel.vscode-html-css
+        esbenp.prettier-vscode
 
-      # C / C++
-      llvm-vs-code-extensions.vscode-clangd
-      ms-vscode.cmake-tools
-      ms-vscode.cpptools
-      ms-vscode.makefile-tools
+        # C / C++
+        llvm-vs-code-extensions.vscode-clangd
+        ms-vscode.cmake-tools
+        ms-vscode.cpptools
+        ms-vscode.makefile-tools
 
-      # Common formats and project tooling
-      editorconfig.editorconfig
-      github.vscode-github-actions
-      jnoortheen.nix-ide
-      redhat.vscode-yaml
-      tamasfe.even-better-toml
-    ] ++ pkgs.vscode-utils.extensionsFromVscodeMarketplace [
-      {
-        # Current theme: "Celestial Echoes"
-        publisher = "jemo";
-        name = "celestial-echoes";
-        version = "0.0.7";
-        hash = "sha256-cccCmXUUMhMI8fzehgzYfewwwWEyDlWu3bHsurdNV0A=";
-      }
-    ];
+        # Common formats and project tooling
+        editorconfig.editorconfig
+        github.vscode-github-actions
+        jnoortheen.nix-ide
+        redhat.vscode-yaml
+        tamasfe.even-better-toml
+      ]
+      ++ pkgs.vscode-utils.extensionsFromVscodeMarketplace [
+        {
+          # Current theme: "Celestial Echoes"
+          publisher = "jemo";
+          name = "celestial-echoes";
+          version = "0.0.7";
+          hash = "sha256-cccCmXUUMhMI8fzehgzYfewwwWEyDlWu3bHsurdNV0A=";
+        }
+      ];
   };
 
   # Hyprland
   wayland.windowManager.hyprland = {
     enable = true;
     package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
-    portalPackage = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
-    
+    portalPackage =
+      inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
+
     # Concatenate the Hyprland Lua modules in a predictable order.
-    extraConfig = builtins.concatStringsSep "\n" (map builtins.readFile [
-      ./hyprland/autostart.lua
-      ./hyprland/appearance.lua
-      ./hyprland/monitors.lua
-      ./hyprland/workspaces.lua
-      ./hyprland/window-rules.lua
-      ./hyprland/keybinds-noctalia.lua
-      ./hyprland/keybinds-applications.lua
-      ./hyprland/keybinds-windows.lua
-      ./hyprland/keybinds-workspaces.lua
-      ./hyprland/keybinds-media.lua
-      ./hyprland/input.lua
-      ./hyprland/cursor.lua
-      ./hyprland/keybinds-screenshots.lua
-    ]);
+    extraConfig = builtins.concatStringsSep "\n" (
+      map builtins.readFile [
+        ./hyprland/autostart.lua
+        ./hyprland/appearance.lua
+        ./hyprland/monitors.lua
+        ./hyprland/workspaces.lua
+        ./hyprland/window-rules.lua
+        ./hyprland/keybinds-noctalia.lua
+        ./hyprland/keybinds-applications.lua
+        ./hyprland/keybinds-windows.lua
+        ./hyprland/keybinds-workspaces.lua
+        ./hyprland/keybinds-media.lua
+        ./hyprland/input.lua
+        ./hyprland/cursor.lua
+        ./hyprland/keybinds-screenshots.lua
+      ]
+    );
   };
 
   # Hyprcursor
@@ -127,18 +138,13 @@
   # Noctalia Shell
   programs.noctalia = {
     enable = true;
-    settings = {
-      theme = {
-        mode = "dark";
-        source = "builtin";
-        builtin = "Catppuccin";
-      };
-      wallpaper = {
-        enabled = true;
-        directory = "/home/laughablahammer/Wallpapers";
-        default.path = "/home/laughablehammer/Wallpapers/shark.jpeg";
-      };
-    };
+    settings = ./noctalia-base.toml;
+  };
+
+  # Keep GUI-managed overrides writable and versioned in this repository.
+  home.file.".local/state/noctalia/settings.toml" = {
+    source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/nixos/noctalia-gui-overrides.toml";
+    force = true;
   };
 
   xfconf.enable = true;
