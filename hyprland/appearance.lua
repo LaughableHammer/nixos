@@ -1,4 +1,7 @@
 hl.config({
+  misc = {
+    initial_workspace_tracking = 0,
+  },
   general = {
     gaps_in = 5,
     gaps_out = 10,

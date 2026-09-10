@@ -44,7 +44,6 @@
     # Desktop applications
     kitty
     vesktop
-    thunderbird
     spotify
     xfconf
     swayimg
@@ -93,6 +92,14 @@
           hash = "sha256-cccCmXUUMhMI8fzehgzYfewwwWEyDlWu3bHsurdNV0A=";
         }
       ];
+  };
+
+  programs.thunderbird = {
+    enable = true;
+    policies.Preferences."mail.shell.checkDefaultClient" = {
+      Value = false;
+      Status = "locked";
+    };
   };
 
   # Hyprland
