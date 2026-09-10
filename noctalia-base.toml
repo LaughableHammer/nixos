@@ -67,13 +67,6 @@ order = [ "default" ]
     thickness = 34
     widget_spacing = 6
 
-        [bar.default.dead_zone]
-        command = ""
-        middle_command = ""
-        right_command = ""
-        scroll_down_command = ""
-        scroll_up_command = ""
-
 [battery]
 warning_threshold = 10
 
@@ -259,7 +252,6 @@ widget_order = [ "lockscreen-login-box@HDMI-A-1", "lockscreen-login-box@DP-2" ]
         show_caps_lock = true
         show_keyboard_layout = true
         show_login_button = true
-        show_password_hint = true
 
     [lockscreen_widgets.widget."lockscreen-login-box@HDMI-A-1"]
     box_height = 70.0
@@ -280,7 +272,6 @@ widget_order = [ "lockscreen-login-box@HDMI-A-1", "lockscreen-login-box@DP-2" ]
         show_caps_lock = true
         show_keyboard_layout = true
         show_login_button = true
-        show_password_hint = true
 
 [nightlight]
 enabled = false
@@ -331,14 +322,12 @@ scale = 1.0
 enabled = []
 
     [[plugins.source]]
-    auto_update = false
     enabled = true
     kind = "git"
     location = "https://github.com/noctalia-dev/official-plugins"
     name = "official"
 
     [[plugins.source]]
-    auto_update = false
     enabled = true
     kind = "git"
     location = "https://github.com/noctalia-dev/community-plugins"
@@ -360,7 +349,6 @@ external_ip_enabled = true
 font_family = "DejaVu Sans"
 launch_apps_as_systemd_services = false
 launch_apps_custom_command = ""
-middle_click_opens_widget_settings = true
 niri_overview_type_to_launch_enabled = false
 offline_mode = false
 password_style = "random"
@@ -384,7 +372,6 @@ time_format = "{:%H:%M}"
     app_grid = true
     categories = true
     compact = false
-    session_search = false
     show_icons = true
     sort_by_usage = true
 
@@ -502,8 +489,6 @@ cpu_temp_critical_threshold = 85.0
 cpu_temp_sensor_path = ""
 cpu_usage_activity_threshold = 50.0
 cpu_usage_critical_threshold = 90.0
-disk_pct_activity_threshold = 80.0
-disk_pct_critical_threshold = 95.0
 disk_poll_seconds = 10.0
 enabled = true
 gpu_poll_seconds = 5.0
@@ -596,7 +581,6 @@ device = "input"
 type = "volume"
 
 [widget.keyboard_layout]
-cycle_command = ""
 hide_when_single_layout = false
 type = "keyboard_layout"
 
