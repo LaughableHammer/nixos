@@ -2,7 +2,7 @@
 # your system.  Help is available in the configuration.nix(5) man page
 # and in the NixOS manual (accessible by running ‘nixos-help’).
 
-{ config, pkgs, ... }:
+{ config, pkgs, inputs, ... }:
 
 {
   imports =
@@ -137,8 +137,14 @@
   # Install firefox.
   programs.firefox.enable = true;
   programs.firefox.nativeMessagingHosts.packages = [ pkgs.firefoxpwa ];
-  # Install hyprland
-  programs.hyprland.enable = true;
+  # Install Hyprland and its desktop portal system-wide. Home Manager owns the
+  # user configuration file but does not install a second Hyprland package.
+  programs.hyprland = {
+    enable = true;
+    package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
+    portalPackage =
+      inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
+  };
   
   services.gvfs.enable = true;
   services.udisks2.enable = true;

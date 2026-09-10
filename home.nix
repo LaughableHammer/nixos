@@ -102,15 +102,9 @@
     };
   };
 
-  # Hyprland
-  wayland.windowManager.hyprland = {
-    enable = true;
-    package = inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
-    portalPackage =
-      inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
-
-    # Concatenate the Hyprland Lua modules in a predictable order.
-    extraConfig = builtins.concatStringsSep "\n" (
+  # Concatenate the Hyprland configuration fragments
+  home.file.".config/hypr/hyprland.lua".text =
+    builtins.concatStringsSep "\n" (
       map builtins.readFile [
         ./hyprland/autostart.lua
         ./hyprland/appearance.lua
@@ -127,7 +121,6 @@
         ./hyprland/keybinds-screenshots.lua
       ]
     );
-  };
 
   # Hyprcursor
   home.file.".local/share/icons/Future-Cyan-Hyprcursor_Theme".source =
