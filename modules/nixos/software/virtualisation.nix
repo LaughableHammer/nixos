@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, userName, ... }:
 
 {
   environment.systemPackages = with pkgs; [
@@ -16,7 +16,7 @@
 
   virtualisation.docker.enable = true;
 
-  users.users."laughablehammer".extraGroups = [
+  users.users.${userName}.extraGroups = [
     "libvirtd"
     "docker"
   ];

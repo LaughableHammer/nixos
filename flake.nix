@@ -17,13 +17,14 @@
   outputs =
     inputs@{ nixpkgs, home-manager, ... }:
     let
+      userName = "laughablehammer";
       mkHost =
         hostName:
         let
           hostPath = ./hosts + "/${hostName}";
         in
         nixpkgs.lib.nixosSystem {
-          specialArgs = { inherit inputs hostName; };
+          specialArgs = { inherit inputs hostName userName; };
           modules = [
             ./configuration.nix
             hostPath
@@ -32,8 +33,8 @@
             {
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
-              home-manager.extraSpecialArgs = { inherit inputs hostName; };
-              home-manager.users."laughablehammer" = {
+              home-manager.extraSpecialArgs = { inherit inputs hostName userName; };
+              home-manager.users.${userName} = {
                 imports = [
                   ./home.nix
                   (hostPath + "/home.nix")
