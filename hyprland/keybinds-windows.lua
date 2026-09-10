@@ -2,6 +2,7 @@ local modifier = "SUPER"
 
 -- Window state and layouts
 hl.bind(modifier .. " + Q", hl.dsp.window.close(), { description = "Kill Active Window" })
+hl.bind(modifier .. " + SHIFT + Q", hl.dsp.window.kill(), { description = "Force Kill Active Window" })
 hl.bind(modifier .. " + P", hl.dsp.window.pseudo({ action = "toggle" }), { description = "Pseudo Tile" })
 hl.bind(modifier .. " + SHIFT + I", hl.dsp.layout("togglesplit"), { description = "Toggle Split" })
 hl.bind(modifier .. " + F", hl.dsp.window.fullscreen({ mode = "fullscreen", action = "toggle" }), { description = "Maximize" })
