@@ -112,11 +112,20 @@ wallpaper_scheme = "m3-content"
     [theme.templates]
     builtin_ids = [ "kitty" ]
 
-[wallpaper.last]
-path = "color:#000000"
+[wallpaper]
+directory = "/home/laughablehammer/Wallpapers"
 
-[wallpaper.monitors.HDMI-A-1]
-path = "color:#000000"
+    [wallpaper.default]
+    path = "/home/laughablehammer/Wallpapers/shark.jpeg"
+
+    [wallpaper.last]
+    path = "color:#000000"
+
+    [wallpaper.monitors.DP-2]
+    path = "/home/laughablehammer/Wallpapers/shark.jpeg"
+
+    [wallpaper.monitors.HDMI-A-1]
+    path = "color:#000000"
 
 [widget.battery]
 enabled = false
