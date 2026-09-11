@@ -3,6 +3,7 @@
 {
   imports = [
     ./hardware-configuration.nix
+    ./reboot-to-windows.nix
     ../../modules/nixos/software/system-tools.nix
     ../../modules/nixos/software/desktop.nix
     ../../modules/nixos/software/virtualisation.nix
@@ -24,4 +25,13 @@
     '';
   };
   boot.loader.efi.canTouchEfiVariables = true;
+
+  # Printing and automatic printer discovery
+  services.printing.enable = true;
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    openFirewall = true;
+  };
+
 }

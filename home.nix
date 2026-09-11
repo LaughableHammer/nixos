@@ -8,6 +8,7 @@
   imports = [
     inputs.noctalia.homeModules.default
     ./modules/home/hyprland
+    ./modules/home/noctalia
   ];
   home.stateVersion = "26.05";
 
@@ -48,10 +49,20 @@
     '';
 
   # Noctalia Shell
-  programs.noctalia = {
-    enable = true;
-    settings = ./noctalia-base.toml;
-  };
+  programs.noctalia =
+    let
+      baseSettings = builtins.fromTOML (builtins.readFile ./noctalia-base.toml);
+    in
+    {
+      enable = true;
+      settings = baseSettings // {
+        shell = baseSettings.shell // {
+          session = baseSettings.shell.session // {
+            actions = baseSettings.shell.session.actions ++ config.my.noctalia.sessionActions;
+          };
+        };
+      };
+    };
 
   # Keep GUI-managed overrides writable and versioned in this repository.
   home.file.".local/state/noctalia/settings.toml" = {
