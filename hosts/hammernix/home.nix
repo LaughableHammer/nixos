@@ -1,4 +1,4 @@
-{ ... }:
+{ inputs, pkgs, ... }:
 
 {
   imports = [
@@ -23,5 +23,10 @@
       shortcut = "6";
       variant = "primary";
     }
+  ];
+
+  # Before first launch: `nix shell nixpkgs#legendary-gl` `legendary auth`
+  home.packages = [
+    inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.rocket-league
   ];
 }

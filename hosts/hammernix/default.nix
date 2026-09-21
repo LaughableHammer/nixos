@@ -1,4 +1,4 @@
-{ ... }:
+{ userName, ... }:
 
 {
   imports = [
@@ -25,6 +25,9 @@
     '';
   };
   boot.loader.efi.canTouchEfiVariables = true;
+
+  programs.gamemode.enable = true;
+  users.users.${userName}.extraGroups = [ "gamemode" ];
 
   # Printing and automatic printer discovery
   services.printing.enable = true;

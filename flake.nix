@@ -12,10 +12,14 @@
     hyprland = {
       url = "github:hyprwm/Hyprland";
     };
+    nix-gaming = {
+      url = "github:fufexan/nix-gaming";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    inputs@{ nixpkgs, home-manager, ... }:
+    inputs@{ nixpkgs, home-manager, nix-gaming, ... }:
     let
       userName = "laughablehammer";
       mkHost =
@@ -45,6 +49,10 @@
         };
     in
     {
+      packages.x86_64-linux = {
+        inherit (nix-gaming.packages.x86_64-linux) rocket-league;
+      };
+
       nixosConfigurations = {
         hammernix = mkHost "hammernix";
       };
