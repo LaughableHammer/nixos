@@ -12,7 +12,7 @@
   ];
   home.stateVersion = "26.05";
 
-  # Concatenate the Hyprland configuration fragments
+  # Assemble Hyprland config from fragments
   home.file.".config/hypr/hyprland.lua".text =
     builtins.concatStringsSep "\n" (
       map builtins.readFile (
@@ -64,7 +64,7 @@
       };
     };
 
-  # Keep GUI-managed overrides writable and versioned in this repository.
+  # Keep GUI-managed overrides writable and versioned in this repo
   home.file.".local/state/noctalia/settings.toml" = {
     source = config.lib.file.mkOutOfStoreSymlink "${config.home.homeDirectory}/nixos/noctalia-gui-overrides.toml";
     force = true;
@@ -97,7 +97,7 @@
     };
   };
 
-  # Otherwise links don't properly open in firefox
+  # Set Firefox as default for HTML links
   xdg.mimeApps = {
     enable = true;
     defaultApplications = {
