@@ -89,8 +89,11 @@ offset_y = 150
 position = "bottom_center"
 position_vertical = "bottom_center"
 
+[plugin_settings."h-jangra/region-recorder"]
+frame_rate = 30
+
 [plugins]
-enabled = []
+enabled = [ "h-jangra/region-recorder" ]
 
 [shell]
 app_icon_color = "error"
