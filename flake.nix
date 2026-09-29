@@ -3,6 +3,8 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
+    # Update llama.cpp independently; flake.lock keeps builds reproducible.
+    nixpkgs-llama.url = "github:NixOS/nixpkgs/nixos-unstable";
     home-manager = {
       url = "github:nix-community/home-manager";
     };

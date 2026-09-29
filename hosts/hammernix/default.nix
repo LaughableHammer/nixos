@@ -8,6 +8,7 @@
     ../../modules/nixos/software/desktop.nix
     ../../modules/nixos/software/virtualisation.nix
     ../../modules/nixos/software/secure-boot-tools.nix
+    ../../modules/nixos/ai
   ];
 
   boot.loader.systemd-boot.enable = false;

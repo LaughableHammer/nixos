@@ -2,6 +2,7 @@
 
 {
   imports = [
+    ../../modules/home/ai/pi
     ../../modules/home/software/development.nix
     ../../modules/home/software/desktop-apps.nix
   ];
