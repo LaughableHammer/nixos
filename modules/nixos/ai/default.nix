@@ -22,9 +22,9 @@
       ctx-size = 65536;
       jinja = true;
 
-      # Sleep after 10 minutes of idleness to free VRAM. The model will be
+      # Sleep after 5 minutes of idleness to free VRAM. The model will be
       # reloaded on next use (autoload is still enabled for on-demand loading).
-      sleep-idle-seconds = 600;
+      sleep-idle-seconds = 300;
     };
   };
 
