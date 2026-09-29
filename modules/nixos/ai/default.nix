@@ -21,6 +21,10 @@
       gpu-layers = "auto";
       ctx-size = 65536;
       jinja = true;
+
+      # Sleep after 10 minutes of idleness to free VRAM. The model will be
+      # reloaded on next use (autoload is still enabled for on-demand loading).
+      sleep-idle-seconds = 600;
     };
   };
 

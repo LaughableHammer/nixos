@@ -53,4 +53,10 @@
     source = ./prompts;
     recursive = true;
   };
+
+  # Global system prompt applied to all models (replaces the default).
+  home.file.".pi/agent/SYSTEM.md" = {
+    source = ./SYSTEM.md;
+    force = true;
+  };
 }
