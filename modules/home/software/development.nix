@@ -25,7 +25,6 @@
     uv
 
     # General development tools
-    git
     ripgrep
     fd
     jq

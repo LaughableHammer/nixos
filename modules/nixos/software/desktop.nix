@@ -2,15 +2,12 @@
 
 {
   environment.systemPackages = with pkgs; [
-    firefoxpwa
     chromium
     file-roller
   ];
 
-  programs.firefox = {
-    enable = true;
-    nativeMessagingHosts.packages = [ pkgs.firefoxpwa ];
-  };
+  programs.firefox.enable = true;
+  # firefoxpwa is managed in home-manager (modules/home/software/desktop-apps.nix).
 
   programs.thunar = {
     enable = true;

@@ -1,9 +1,10 @@
-{ inputs, pkgs, ... }:
+{ pkgs, ... }:
 
 {
   services.llama-cpp = {
     enable = true;
-    package = inputs.nixpkgs-llama.legacyPackages.${pkgs.stdenv.hostPlatform.system}.pkgsRocm.llama-cpp;
+    # ROCm build for AMD GPU offload.
+    package = pkgs.pkgsRocm.llama-cpp;
     openFirewall = false;
 
     settings = {
@@ -15,15 +16,15 @@
       # service-managed directory; rebuilding does not download any models.
       models-dir = "/var/lib/llama-cpp";
       models-max = 1;
-      no-models-autoload = true;
+      # Autoload (the default) loads models on demand; no-models-autoload
+      # would require loading them manually.
       no-warmup = true;
       # Offload model layers to the AMD GPU (subject to available VRAM).
       gpu-layers = "auto";
       ctx-size = 65536;
       jinja = true;
 
-      # Sleep after 5 minutes of idleness to free VRAM. The model will be
-      # reloaded on next use (autoload is still enabled for on-demand loading).
+      # Frees VRAM after 5 idle minutes; the model reloads on the next request.
       sleep-idle-seconds = 300;
     };
   };

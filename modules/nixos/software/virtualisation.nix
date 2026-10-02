@@ -21,8 +21,6 @@
   };
 
   programs.virt-manager.enable = true;
-  services.qemuGuest.enable = true;
-  services.spice-vdagentd.enable = true;
 
   users.users.${userName}.extraGroups = [
     "libvirtd"

@@ -67,13 +67,10 @@ pkgs.writeShellScriptBin "pi" ''
     "$sessionDir"
 
   ${pkgs.lib.optionalString (confinedConfig != null) ''
-    # Seed declarative configuration once, leaving cwd-local copies editable.
-    # The confinement extension itself is always refreshed so the OS boundary
-    # and its UI/defense-in-depth companion cannot drift apart.
+    # Refresh declarative config on every launch so it tracks this repo;
+    # sessions and other state remain untouched.
     for file in settings.json models.json SYSTEM.md; do
-      if [[ ! -e "$agentDir/$file" ]]; then
-        ${pkgs.coreutils}/bin/cp ${confinedConfig}/"$file" "$agentDir/$file"
-      fi
+      ${pkgs.coreutils}/bin/cp ${confinedConfig}/"$file" "$agentDir/$file"
     done
     ${pkgs.coreutils}/bin/ln -sfn \
       ${confinedConfig}/extensions/cwd-confined.ts \
