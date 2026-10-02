@@ -4,17 +4,25 @@
   environment.systemPackages = with pkgs; [
     dnsmasq
     docker-compose
+    swtpm
   ];
 
-  virtualisation.libvirtd = {
-    enable = true;
-    qemu.vhostUserPackages = [ pkgs.virtiofsd ];
+  virtualisation = {
+    libvirtd = {
+      enable = true;
+      qemu = {
+        swtpm.enable = true; # Enables software TPM emulation
+        vhostUserPackages = [ pkgs.virtiofsd ];
+      };
+    };
+    docker = {
+      enable = true;
+    };
   };
+
   programs.virt-manager.enable = true;
   services.qemuGuest.enable = true;
   services.spice-vdagentd.enable = true;
-
-  virtualisation.docker.enable = true;
 
   users.users.${userName}.extraGroups = [
     "libvirtd"
