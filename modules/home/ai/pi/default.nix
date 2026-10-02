@@ -58,6 +58,8 @@ let
   };
 in
 {
+  imports = [ ./pi-gui.nix ];
+
   # The original package remains in the wrapper's closure, but only this
   # launcher is placed on PATH so its `pi` binary wins without a collision.
   home.packages = [ piWrapper ];
