@@ -1,10 +1,9 @@
-{ pkgs, ... }:
+{ inputs, pkgs, ... }:
 
 {
   services.llama-cpp = {
     enable = true;
-    # ROCm build for AMD GPU offload.
-    package = pkgs.pkgsRocm.llama-cpp;
+    package = inputs.nixpkgs-llama.legacyPackages.${pkgs.stdenv.hostPlatform.system}.pkgsRocm.llama-cpp;
     openFirewall = false;
 
     settings = {
