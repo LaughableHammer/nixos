@@ -8,5 +8,6 @@
     git
     zip
     unzip
+    file
   ];
 }

@@ -3,6 +3,11 @@
 let
   settings = {
     theme = "catppuccin-mocha";
+
+    defaultProvider = "openrouter";
+    defaultModel = "deepseek/deepseek-v4.1-flash";
+    defaultThinkingLevel = "high";
+    
     packages = [
       "npm:pi-usage-cli@1.1.3"
       "npm:pi-token-speed@0.10.2"

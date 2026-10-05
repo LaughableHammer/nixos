@@ -13,6 +13,12 @@
       OPENAI_API_BASE_URL = "http://127.0.0.1:8080/v1";
       # Key is unused by llama-cpp but Open WebUI requires one.
       OPENAI_API_KEY = "sk-local";
+      # Open WebUI runs `pip install` on the requirements frontmatter of
+      # imported functions, which fails on NixOS (the package's python has no
+      # pip) and aborts the import with "error creating function". Disable it;
+      # function dependencies must instead be present in the open-webui
+      # package's python environment (requests/pydantic/... already are).
+      ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS = "false";
     };
   };
 }
