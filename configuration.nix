@@ -21,6 +21,29 @@
   services.power-profiles-daemon.enable = true;
   services.upower.enable = true;
 
+  zramSwap = {
+    enable = true;
+    memoryPercent = 25;
+  };
+
+  swapDevices = [
+    {
+      device = "/var/lib/swapfile";
+      size = 16384; # MiB
+      priority = 0; # below zramSwap, so compressed swap fills first
+    }
+  ];
+
+  boot.kernel.sysctl = {
+    "vm.swappiness" = 100;
+    "vm.page-cluster" = 0;
+  };
+
+  systemd.oomd = {
+    enableRootSlice = true;
+    enableUserSlices = true;
+  };
+
   # Enable networking
   networking.networkmanager.enable = true;
   networking.hosts = {
@@ -92,7 +115,7 @@
     portalPackage =
       inputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.xdg-desktop-portal-hyprland;
   };
-  
+
   nixpkgs.config.allowUnfree = true;
 
   system.stateVersion = "26.05";

@@ -5,6 +5,8 @@
 }:
 
 let
+  agentSlice = import ./agent-slice.nix { inherit pkgs; };
+
   # Deliberately small command set. Its complete runtime closure is mounted
   # read-only; no user profile or host PATH is visible in confined mode.
   sandboxTools = with pkgs; [
@@ -39,6 +41,12 @@ let
 in
 pkgs.writeShellScriptBin "pi" ''
   set -euo pipefail
+
+  # Run at low priority in the agent slice; see agent-slice.nix.
+  if [[ -z "''${PI_AGENT_SLICE:-}" && -S "''${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]]; then
+    export PI_AGENT_SLICE=1
+    exec ${agentSlice.systemdRun} "$0" "$@"
+  fi
 
   confined=false
   piArgs=()

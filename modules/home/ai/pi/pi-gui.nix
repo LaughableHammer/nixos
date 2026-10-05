@@ -1,6 +1,8 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 
 let
+  agentSlice = import ./agent-slice.nix { inherit pkgs; };
+
   pname = "pi-gui";
   version = "1.0.1";
 
@@ -15,6 +17,15 @@ let
 
   pi-gui = pkgs.appimageTools.wrapType2 {
     inherit pname version src;
+
+    # Run at low priority in the agent slice; see agent-slice.nix. pi-gui
+    # bundles its own agent, so it cannot inherit this from the `pi` launcher.
+    extraPreBwrapCmds = ''
+      if [[ -z "''${PI_AGENT_SLICE:-}" && -S "''${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]]; then
+        export PI_AGENT_SLICE=1
+        exec ${agentSlice.systemdRun} "$0" "$@"
+      fi
+    '';
 
     extraInstallCommands = ''
       install -Dm644 \

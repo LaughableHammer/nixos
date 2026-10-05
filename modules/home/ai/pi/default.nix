@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 
 let
   settings = {
@@ -61,9 +61,19 @@ let
   piWrapper = import ./cwd-confined-wrapper.nix {
     inherit pkgs confinedConfig;
   };
+
+  agentSlice = import ./agent-slice.nix { inherit pkgs; };
 in
 {
   imports = [ ./pi-gui.nix ];
+
+  systemd.user.slices.${lib.removeSuffix ".slice" agentSlice.name} = {
+    Unit.Description = "Pi agent (low resource priority)";
+    Slice = {
+      CPUWeight = agentSlice.cpuWeight;
+      IOWeight = agentSlice.ioWeight;
+    };
+  };
 
   # The original package remains in the wrapper's closure, but only this
   # launcher is placed on PATH so its `pi` binary wins without a collision.
