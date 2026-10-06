@@ -29,7 +29,10 @@
   boot.loader.efi.canTouchEfiVariables = true;
 
   programs.gamemode.enable = true;
-  users.users.${userName}.extraGroups = [ "gamemode" "deepcool-digital" ];
+  users.users.${userName}.extraGroups = [
+    "gamemode"
+    "deepcool-digital"
+  ];
 
   # The CH360 Digital display is a USB HID device (3633:0015).
   services.hardware.deepcool-digital-linux.enable = true;

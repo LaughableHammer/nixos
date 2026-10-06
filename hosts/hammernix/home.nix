@@ -3,6 +3,7 @@
 {
   imports = [
     ../../modules/home/ai/pi
+    ../../modules/home/security/forensics.nix
     ../../modules/home/software/development.nix
     ../../modules/home/software/desktop-apps.nix
   ];
