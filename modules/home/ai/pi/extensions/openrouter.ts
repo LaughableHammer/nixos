@@ -31,6 +31,9 @@ const ROUTING_API = "openai-completions";
 
 // The ZDR list is exactly the model pages' `!(training || retainsPrompts)` set;
 // `zdr`/`data_collection` also make OpenRouter enforce it server-side.
+//
+// Throughput stats (`throughput_last_30m`) are only returned for authenticated
+// requests, so the list is fetched with the resolved OpenRouter API key.
 const ZDR_ENDPOINTS = "https://openrouter.ai/api/v1/endpoints/zdr";
 
 const PINS_FILE = "openrouter-pins.json";
@@ -54,6 +57,7 @@ interface Row {
   quant: string;
   bits: number | null;
   context: number | null;
+  tps: number | null;
   cost: number;
 }
 
@@ -98,32 +102,44 @@ function isRoutingModel(
 
 // --- Endpoint data --------------------------------------------------------
 
-let zdrList: Promise<Endpoint[]> | undefined;
+// Cached per auth state: an anonymous fetch returns the same list but with every
+// throughput field null, so it must never satisfy a later authenticated request.
+const zdrCache = new Map<string, Promise<Endpoint[]>>();
 
-function zdrEndpoints(): Promise<Endpoint[]> {
-  if (!zdrList) {
-    zdrList = fetch(ZDR_ENDPOINTS)
-      .then((response) => {
-        if (!response.ok) throw new Error(`OpenRouter ZDR endpoint list returned ${response.status}`);
-        return response.json();
-      })
-      .then((body) => {
-        const data = (body as { data?: unknown }).data;
-        if (!Array.isArray(data)) throw new Error("unexpected ZDR endpoint list shape");
-        return data as Endpoint[];
-      })
-      .catch((error) => {
-        zdrList = undefined;
-        throw error;
-      });
-  }
-  return zdrList;
+function zdrEndpoints(apiKey: string | undefined): Promise<Endpoint[]> {
+  const cacheKey = apiKey ? "authenticated" : "anonymous";
+  const cached = zdrCache.get(cacheKey);
+  if (cached) return cached;
+
+  const request = fetch(ZDR_ENDPOINTS, apiKey ? { headers: { Authorization: `Bearer ${apiKey}` } } : undefined)
+    .then((response) => {
+      if (!response.ok) throw new Error(`OpenRouter ZDR endpoint list returned ${response.status}`);
+      return response.json();
+    })
+    .then((body) => {
+      const data = (body as { data?: unknown }).data;
+      if (!Array.isArray(data)) throw new Error("unexpected ZDR endpoint list shape");
+      return data as Endpoint[];
+    })
+    .catch((error) => {
+      zdrCache.delete(cacheKey);
+      throw error;
+    });
+
+  zdrCache.set(cacheKey, request);
+  return request;
 }
 
 function quantBits(quant: unknown): number | null {
   if (typeof quant !== "string" || quant.length === 0) return null;
   const match = /^(?:fp|bf|int)(\d+)/.exec(quant.toLowerCase());
   return match ? Number(match[1]) : null;
+}
+
+/** OpenRouter reports throughput as a `{p50,p75,p90,p99}` object; p50 is the median. */
+function throughputP50(value: unknown): number | null {
+  const p50 = value && typeof value === "object" ? (value as Record<string, unknown>).p50 : value;
+  return typeof p50 === "number" && Number.isFinite(p50) ? p50 : null;
 }
 
 function estimatedCost(inputPerM: number, outputPerM: number, cacheReadPerM: number): number {
@@ -163,6 +179,7 @@ function buildRows(model: string, endpoints: Endpoint[]): Row[] {
       quant: quant.toLowerCase(),
       bits: quantBits(quant),
       context: typeof endpoint.context_length === "number" ? endpoint.context_length : null,
+      tps: throughputP50(endpoint.throughput_last_30m),
       cost: estimatedCost(input, output, cacheRead),
     });
   }
@@ -183,6 +200,10 @@ function formatCost(cost: number): string {
   if (cost === 0) return "$0";
   if (cost < 0.01) return `$${cost.toFixed(4)}`;
   return `$${cost.toFixed(cost < 1 ? 3 : 2)}`;
+}
+
+function formatTps(tps: number | null): string {
+  return tps === null ? "?" : String(Math.round(tps));
 }
 
 // --- Picker ---------------------------------------------------------------
@@ -256,7 +277,7 @@ class ProviderPicker implements Component, Focusable {
 
   render(width: number): string[] {
     const theme = this.theme;
-    const header = ["provider", "quant", "context", "est. cost"];
+    const header = ["provider", "quant", "context", "tps p50", "est. cost"];
     const lines = [...this.border.render(width)];
     lines.push(theme.fg("accent", theme.bold(`OpenRouter endpoints — ${this.model}`)));
     lines.push(
@@ -287,6 +308,7 @@ class ProviderPicker implements Component, Focusable {
         row.provider,
         row.quant,
         formatTokens(row.context),
+        formatTps(row.tps),
         formatCost(row.cost),
       ]);
       const widths = header.map((title, index) =>
@@ -408,7 +430,11 @@ export default function (pi: ExtensionAPI) {
         return;
       }
 
-      const endpoints = await load(ctx, `Fetching ZDR endpoints for ${model.id}…`, () => zdrEndpoints());
+      const endpoints = await load(ctx, `Fetching ZDR endpoints for ${model.id}…`, async () => {
+        // The key unlocks per-endpoint throughput stats in the same response.
+        const apiKey = await ctx.modelRegistry.getApiKeyForProvider(PROVIDER);
+        return zdrEndpoints(apiKey);
+      });
       if (!endpoints) return;
 
       const rows = buildRows(model.id, endpoints);
