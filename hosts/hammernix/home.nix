@@ -6,6 +6,7 @@
     ../../modules/home/security/forensics.nix
     ../../modules/home/software/development.nix
     ../../modules/home/software/desktop-apps.nix
+    ../../modules/home/software/notifications.nix
     ../../modules/home/software/tmux.nix
   ];
 

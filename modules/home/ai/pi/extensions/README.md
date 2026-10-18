@@ -37,6 +37,30 @@ This is a slash command, not an LLM-callable custom tool: that is preferable
 for an approval boundary because the user, rather than the model, controls when
 planning starts and when implementation is authorized.
 
+## Desktop notifications
+
+`notifications.ts` raises a desktop notification through Noctalia:
+
+- when an agent run settles and Pi is waiting for the next prompt; the body
+  includes the working directory and the start of Pi's last reply;
+- when a blocking extension UI prompt opens (for example the `/plan` approval
+  selector), marked as critical so it does not time out unnoticed.
+
+Notifications are best-effort and disabled in cwd-confined sessions, where the
+sandbox has no session bus or `notify-send`. Toggle them with:
+
+```text
+/notify on
+/notify off
+/notify status
+```
+
+Set `PI_NOTIFICATIONS=0` before launching Pi to start with notifications off.
+
+Kitty is configured separately (in `modules/home/software/notifications.nix`)
+to use its built-in shell integration and to notify when an unfocused command
+lasting at least five seconds finishes.
+
 ## Cwd confinement
 
 The Home Manager module installs a launcher in place of the package's direct
