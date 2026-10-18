@@ -118,6 +118,23 @@
 
   nixpkgs.config.allowUnfree = true;
 
+  # nixpkgs 7fd4004 (the revision Hyprland 8010b4e is cached against) has a
+  # stale pnpm hash for typescript-language-server 6.0.2. The fixed hash is
+  # already in newer nixpkgs and its output is cached. Drop this override once
+  # the root nixpkgs pin moves past the fix.
+  nixpkgs.overlays = [
+    (
+      final: prev:
+      {
+        typescript-language-server = prev.typescript-language-server.overrideAttrs (old: {
+          pnpmDeps = old.pnpmDeps.overrideAttrs (_: {
+            outputHash = "sha256-xR/EF60lVBsITKgH7wCM2wHM46PFQevD51KfCENSUH4=";
+          });
+        });
+      }
+    )
+  ];
+
   system.stateVersion = "26.05";
 
 }
