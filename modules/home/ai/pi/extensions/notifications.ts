@@ -16,9 +16,7 @@ const APP_NAME = "Pi";
 let enabled = process.env.PI_NOTIFICATIONS !== "0";
 
 function notificationsAvailable(): boolean {
-  // A cwd-confined Pi runs in a mount namespace without the session bus or
-  // notify-send, so it cannot reach the host notification daemon.
-  return enabled && process.env.PI_CWD_CONFINED !== "1";
+  return enabled;
 }
 
 function notify(
@@ -93,12 +91,8 @@ export default function notificationsExtension(pi: ExtensionAPI): void {
         return;
       }
 
-      const note =
-        process.env.PI_CWD_CONFINED === "1"
-          ? " (unavailable in cwd-confined sessions)"
-          : "";
       ctx.ui.notify(
-        `Pi notifications ${enabled ? "enabled" : "disabled"}${note}.`,
+        `Pi notifications ${enabled ? "enabled" : "disabled"}.`,
         "info",
       );
     },

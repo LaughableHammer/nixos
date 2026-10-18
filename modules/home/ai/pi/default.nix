@@ -90,19 +90,16 @@ let
   settingsFile = pkgs.writeText "pi-settings.json" (builtins.toJSON settings);
   modelsFile = pkgs.writeText "pi-models.json" (builtins.toJSON models);
 
-  confinedConfig = pkgs.runCommand "pi-confined-config" { } ''
-    mkdir -p $out/extensions
-    cp ${settingsFile} $out/settings.json
-    cp ${modelsFile} $out/models.json
-    cp ${./SYSTEM.md} $out/SYSTEM.md
-    cp ${./extensions/cwd-confined.ts} $out/extensions/cwd-confined.ts
-  '';
-
-  piWrapper = import ./cwd-confined-wrapper.nix {
-    inherit pkgs confinedConfig;
-  };
-
   agentSlice = import ./agent-slice.nix { inherit pkgs; };
+
+  # Run Pi at low priority in the agent slice; see agent-slice.nix.
+  piLauncher = pkgs.writeShellScriptBin "pi" ''
+    if [[ -z "''${PI_AGENT_SLICE:-}" && -S "''${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]]; then
+      export PI_AGENT_SLICE=1
+      exec ${agentSlice.systemdRun} "$0" "$@"
+    fi
+    exec ${pkgs.pi-coding-agent}/bin/pi "$@"
+  '';
 in
 {
   imports = [ ./pi-gui.nix ];
@@ -115,16 +112,13 @@ in
     };
   };
 
-  # The original package remains in the wrapper's closure, but only this
-  # launcher is placed on PATH so its `pi` binary wins without a collision.
-  home.packages = [ piWrapper ];
+  home.packages = [ piLauncher ];
 
   home.file.".pi/agent/settings.json".source = settingsFile;
   home.file.".pi/agent/models.json".source = modelsFile;
 
   # Keep Pi customisations in this repository while exposing them in Pi's
-  # standard user-level directories. cwd-confined.ts is inert without the
-  # launcher's PI_CWD_CONFINED marker.
+  # standard user-level directories.
   home.file.".pi/agent/extensions" = {
     source = ./extensions;
     recursive = true;
