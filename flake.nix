@@ -22,6 +22,10 @@
       url = "github:fufexan/nix-gaming";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # GDB plugin for binary exploitation.
+    pwndbg = {
+      url = "github:pwndbg/pwndbg";
+    };
   };
 
   outputs =

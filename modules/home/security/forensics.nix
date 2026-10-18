@@ -42,6 +42,9 @@
     # Signature matching for files and memory dumps.
     yara
 
+    # Network
+    wireshark
+
     # Volatility 3 framework (windows/linux/mac plugins).
     volatility3
   ];
