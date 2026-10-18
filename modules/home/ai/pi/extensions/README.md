@@ -46,7 +46,10 @@ planning starts and when implementation is authorized.
 - when a blocking extension UI prompt opens (for example the `/plan` approval
   selector), marked as critical so it does not time out unnoticed.
 
-Notifications are best-effort. Toggle them with:
+Notifications are best-effort. On Hyprland, notifications are suppressed
+whenever the kitty window containing Pi is the focused window, so dialogs you
+are already looking at (for example `/or-model`) do not produce a desktop
+notification. Toggle them with:
 
 ```text
 /notify on
@@ -58,5 +61,8 @@ Set `PI_NOTIFICATIONS=0` before launching Pi to start with notifications off.
 
 Kitty is configured separately (in `modules/home/software/notifications.nix`)
 to use its built-in shell integration and to notify when an unfocused command
-lasting at least five seconds finishes.
+lasting at least five seconds finishes. Kitty only tracks commands entered at
+the shell prompt; commands spawned by Pi's bash tool are captured by Pi rather
+than reported as shell-integration jobs, so they do not produce completion
+notifications.
 

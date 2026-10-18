@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import type {
   ExtensionAPI,
@@ -19,12 +20,55 @@ function notificationsAvailable(): boolean {
   return enabled;
 }
 
+function parentPid(pid: number): number | undefined {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    // The comm field is parenthesised and may contain spaces, so parse after
+    // the final `)`. The next fields are state, then ppid.
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    const ppid = Number(fields[1]);
+    return Number.isInteger(ppid) && ppid > 0 ? ppid : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function ancestorPids(): Set<number> {
+  const ancestors = new Set<number>();
+  let pid = process.pid;
+  while (pid > 1 && !ancestors.has(pid)) {
+    ancestors.add(pid);
+    const ppid = parentPid(pid);
+    if (ppid === undefined) break;
+    pid = ppid;
+  }
+  return ancestors;
+}
+
+/** True only when the terminal hosting Pi is the focused Hyprland window. */
+function terminalIsFocused(): boolean {
+  if (!process.env.HYPRLAND_INSTANCE_SIGNATURE) return false;
+
+  try {
+    const output = execFileSync("hyprctl", ["-j", "activewindow"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 1500,
+    });
+    const active = JSON.parse(output) as { pid?: unknown };
+    return typeof active.pid === "number" && ancestorPids().has(active.pid);
+  } catch {
+    // Focus is unknown; prefer notifying over silently swallowing the event.
+    return false;
+  }
+}
+
 function notify(
   title: string,
   body: string,
   urgency: "low" | "normal" | "critical" = "normal",
 ): void {
-  if (!notificationsAvailable()) return;
+  if (!notificationsAvailable() || terminalIsFocused()) return;
 
   const child = spawn(
     "notify-send",

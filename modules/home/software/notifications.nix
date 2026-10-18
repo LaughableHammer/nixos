@@ -19,7 +19,9 @@
 
       # Notify when a command takes at least 5 seconds and the kitty window is
       # not focused. Clear the notification when the window regains focus or
-      # the next command finishes.
+      # the next command finishes. Kitty only tracks commands started at a
+      # shell prompt; commands spawned by Pi's bash tool are captured by Pi
+      # rather than reported as shell-integration jobs, so they are silent.
       notify_on_cmd_finish = "unfocused 5.0 notify focus next";
     };
   };
