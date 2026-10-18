@@ -5,9 +5,9 @@ let
     theme = "catppuccin-mocha";
 
     defaultProvider = "openrouter";
-    defaultModel = "deepseek/deepseek-v4.1-flash";
-    defaultThinkingLevel = "high";
-    
+    defaultModel = "deepseek/deepseek-v4.1-flash-1017";
+    defaultThinkingLevel = "low";
+
     packages = [
       "npm:pi-usage-cli@1.1.3"
       "npm:pi-token-speed@0.10.2"
@@ -45,6 +45,46 @@ let
         xhigh = "xhigh";
       };
     };
+
+    # OpenRouter serves the 1017 snapshot, but neither pi's built-in catalog
+    # nor the pi.dev remote overlay lists it, so it is declared here to be
+    # selectable and usable as the default model.
+    providers.openrouter.models = [
+      {
+        id = "deepseek/deepseek-v4.1-flash-1017";
+        name = "DeepSeek: DeepSeek V4.1 Flash 1017";
+        api = "openai-completions";
+        reasoning = true;
+        thinkingLevelMap = {
+          off = "none";
+          minimal = null;
+          low = "low";
+          medium = null;
+          high = "high";
+          xhigh = null;
+          max = "max";
+        };
+        input = [
+          "text"
+          "image"
+        ];
+        cost = {
+          input = 0.15;
+          output = 0.6;
+          cacheRead = 0.003;
+          cacheWrite = 0;
+        };
+        contextWindow = 1048576;
+        maxTokens = 393216;
+        compat = {
+          supportsDeveloperRole = false;
+          thinkingFormat = "openrouter";
+          supportsStrictMode = true;
+          sendSessionAffinityHeaders = true;
+          requiresReasoningContentOnAssistantMessages = true;
+        };
+      }
+    ];
   };
 
   settingsFile = pkgs.writeText "pi-settings.json" (builtins.toJSON settings);
