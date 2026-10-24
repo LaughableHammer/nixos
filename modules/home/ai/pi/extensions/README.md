@@ -1,5 +1,25 @@
 # Pi extensions
 
+## Adding an extension
+
+1. Add `<name>.ts` to this directory, default-exporting a function of the form
+   `(pi: ExtensionAPI) => void` (see `plan.ts` for the API in use).
+2. No Nix change is needed: `modules/home/ai/pi/default.nix` exposes this
+   directory recursively as `~/.pi/agent/extensions`, which Pi auto-discovers.
+3. Rebuild, then restart Pi or run `/reload`:
+   `sudo nixos-rebuild switch --flake .` (or `./build.sh`).
+4. Document the extension below.
+
+The files exposed here are symlinks into the Nix store, so editing an extension
+in this repository has no effect until the rebuild — `/reload` alone will not
+pick up the change.
+
+Extensions run in the host Pi process, outside the Docker sandbox, so they have
+full filesystem and network access and may spawn host commands (as
+`notifications.ts` does with Noctalia). Only the sandbox extension in
+`../sandbox/extension.ts` mediates sandboxed tool calls; see
+`../sandbox/README.md`.
+
 ## `/plan`
 
 `plan.ts` adds an approval-gated planning mode to Pi. It is based on Pi's

@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, config, ... }:
 
 let
   settings = {
@@ -92,8 +92,8 @@ let
 
   agentSlice = import ./agent-slice.nix { inherit pkgs; };
 
-  # Run Pi at low priority in the agent slice; see agent-slice.nix.
-  piLauncher = pkgs.writeShellScriptBin "pi" ''
+  # Fallback used when my.piSandbox.enable is false: no sandboxing at all.
+  plainLauncher = pkgs.writeShellScriptBin "pi" ''
     if [[ -z "''${PI_AGENT_SLICE:-}" && -S "''${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]]; then
       export PI_AGENT_SLICE=1
       exec ${agentSlice.systemdRun} "$0" "$@"
@@ -102,7 +102,7 @@ let
   '';
 in
 {
-  imports = [ ./pi-gui.nix ];
+  imports = [ ./sandbox ];
 
   systemd.user.slices.${lib.removeSuffix ".slice" agentSlice.name} = {
     Unit.Description = "Pi agent (low resource priority)";
@@ -112,7 +112,11 @@ in
     };
   };
 
-  home.packages = [ piLauncher ];
+  # The sandbox module replaces this launcher with one that parses the sandbox
+  # flags and routes built-in tools into a container; see ./sandbox.
+  home.packages = [
+    (if config.my.piSandbox.enable then config.my.piSandbox.launcher else plainLauncher)
+  ];
 
   home.file.".pi/agent/settings.json".source = settingsFile;
   home.file.".pi/agent/models.json".source = modelsFile;

@@ -17,6 +17,14 @@
     };
     docker = {
       enable = true;
+      # Rootless Docker maps container-root to the invoking user, so the Pi
+      # sandbox can run as root (needed for `apk`) without writing root-owned
+      # files into bind-mounted host directories. Sandbox runs select this daemon
+      # via DOCKER_HOST; other Docker usage keeps the default socket.
+      rootless = {
+        enable = true;
+        setSocketVariable = false;
+      };
     };
   };
 
