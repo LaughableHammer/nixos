@@ -57,6 +57,20 @@ This is a slash command, not an LLM-callable custom tool: that is preferable
 for an approval boundary because the user, rather than the model, controls when
 planning starts and when implementation is authorized.
 
+## OpenRouter balance
+
+`openrouter-balance.ts` adds an `or: $X.XX` item to the footer while an
+OpenRouter model is selected. It reads the active key from Pi's model registry
+and queries OpenRouter directly:
+
+- a key with a fixed `limit` shows that limit minus its usage;
+- an unlimited key shows the account's remaining credits
+  (`total_credits - total_usage`).
+
+The value is cached for a minute and refreshed on session start, model change,
+and after each settled agent run. `/or-balance` forces a fresh lookup and
+reports whether the number is a per-key limit or account credits.
+
 ## Desktop notifications
 
 `notifications.ts` raises a desktop notification through Noctalia:
