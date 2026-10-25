@@ -49,7 +49,6 @@
   # Local name for the Open WebUI service on 127.0.0.1:8081.
   networking.hosts."127.0.0.1" = [ "openwebui.local" ];
 
-  # Printing and automatic printer discovery
   services.printing.enable = true;
   services.avahi = {
     enable = true;

@@ -44,7 +44,6 @@
     enableUserSlices = true;
   };
 
-  # Enable networking
   networking.networkmanager.enable = true;
   networking.hosts = {
     "152.67.115.112" = [ "oraclevm" ];
@@ -65,18 +64,15 @@
     LC_TIME = "en_AU.UTF-8";
   };
 
-  # Enable the X11 windowing system
   services.xserver.enable = true;
   services.displayManager.gdm.enable = true;
   services.desktopManager.gnome.enable = false;
 
-  # Configure keymap in X11
   services.xserver.xkb = {
     layout = "au";
     variant = "";
   };
 
-  # Enable sound with pipewire
   services.pulseaudio.enable = false;
   security.rtkit.enable = true;
   services.pipewire = {

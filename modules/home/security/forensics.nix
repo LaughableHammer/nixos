@@ -1,11 +1,8 @@
 {
-  # CLI digital forensics toolkit for analysing disk images and memory dumps.
-  #
-  # Analysis-only, and all of it runs unprivileged on image files, so it lives in
-  # the user profile rather than environment.systemPackages: no imaging or
-  # acquisition tools, and nothing here touches this machine's own disks.
-  # Volatility 3 symbol tables (Windows PDB / Linux ISF profiles) are downloaded
-  # at runtime, not packaged here.
+  # CLI digital forensics toolkit for disk images and memory dumps. It is
+  # analysis-only and runs unprivileged on image files, so it lives in the user
+  # profile rather than environment.systemPackages: nothing here touches this
+  # machine's own disks, and volatility3 symbol tables are downloaded at runtime.
   pkgs,
   ...
 }:
@@ -42,7 +39,6 @@
     # Signature matching for files and memory dumps.
     yara
 
-    # Network
     wireshark
 
     # Volatility 3 framework (windows/linux/mac plugins).

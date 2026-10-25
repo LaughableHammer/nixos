@@ -11,7 +11,7 @@
     libvirtd = {
       enable = true;
       qemu = {
-        swtpm.enable = true; # Enables software TPM emulation
+        swtpm.enable = true;
         vhostUserPackages = [ pkgs.virtiofsd ];
       };
     };
