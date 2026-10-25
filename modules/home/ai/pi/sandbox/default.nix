@@ -634,6 +634,14 @@ exec "$@"' pi-sandbox
     export PI_SANDBOX_STRICT="${if cfg.strictTools then "1" else "0"}"
     export PI_SANDBOX_EXEC="${sandboxExec}/bin/pi-sandbox-exec"
 
+    # Host-side extensions (for example the Brave search one) run outside the
+    # container's network namespace, so `--network none` cannot stop them.
+    # -local therefore disables them explicitly with PI_WEB=0; the value is
+    # otherwise inherited from the environment, so PI_WEB=0 works everywhere.
+    PI_WEB="''${PI_WEB:-1}"
+    if [ "$PI_SANDBOX_NET" = "0" ]; then PI_WEB=0; fi
+    export PI_WEB
+
     pi_sandbox_prepare
     pi_sandbox_ensure_image
     trap pi_sandbox_cleanup EXIT

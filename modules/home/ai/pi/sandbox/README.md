@@ -111,4 +111,8 @@ pi-sandbox-shell -cwdro -local # interactive shell with the same mounts
   calls outside the sandboxed built-ins, and keep `defaultProjectTrust = "never"`.
 - With network enabled, anything the agent can read can leave the machine; use
   `-local` for sensitive work.
+- `-local` only removes the container's network. Host-side extensions keep
+  whatever network the Pi process has, so they must honour `PI_WEB=0`
+  themselves; `web_search` (see `../extensions/README.md`) does, and exports it
+  from the launcher.
 - `-cwd` writes are real host writes; there is no overlay.

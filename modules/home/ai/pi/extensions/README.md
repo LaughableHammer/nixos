@@ -71,6 +71,42 @@ The value is cached for a minute and refreshed on session start, model change,
 and after each settled agent run. `/or-balance` forces a fresh lookup and
 reports whether the number is a per-key limit or account credits.
 
+## Web search
+
+`brave-search.ts` adds a `web_search` tool backed by the Brave Search CLI
+(`bx`, from `pkgs.brave-search-cli`). `bx context` returns pre-extracted,
+token-budgeted page text in one call, so the extension does no HTTP or HTML
+handling: it only builds the arguments, truncates the JSON to Pi's limits
+(full output is written to a temp file when truncated), and renders the result.
+The optional `maxTokens` parameter (512–8192, default 2048) maps to
+`--max-tokens`.
+
+Setup is manual because the key must not live in the Nix store:
+
+```bash
+bx config set-key          # interactive; writes ~/.config/brave-search/config.json
+bx config path             # where the key is stored
+```
+
+`BRAVE_SEARCH_API_KEY` is also honoured. `~/.config` is in
+`my.piSandbox.maskPaths`, so the container cannot read the key, and it must not
+be mounted into the sandbox. The free Brave plan includes about 1,000 queries
+per month; the CLI maps auth and rate-limit failures to distinct exit codes,
+which the tool reports as hints.
+
+`web_search` runs `bx` on the host, not in the container, so the sandbox's
+network policy does not apply to it. Two things disable it instead:
+
+- `pi -local` exports `PI_WEB=0` and the tool is not registered; the footer
+  shows `web: off (network disabled by -local)`. `--network none` only covers
+  the container, and Pi itself still needs the model provider, so host-side
+  tools have to be told about `-local` explicitly.
+- `my.piSandbox.strictTools = true` blocks host-side tools, and
+  `PI_SANDBOX_STRICT=1` likewise skips registration.
+
+`PI_WEB=0 pi` disables it independently of the sandbox, including under
+`-insecure`.
+
 ## Desktop notifications
 
 `notifications.ts` raises a desktop notification through Noctalia:
