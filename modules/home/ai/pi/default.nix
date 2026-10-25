@@ -11,6 +11,7 @@ let
     packages = [
       "npm:pi-usage-cli@1.1.3"
       "npm:pi-token-speed@0.10.2"
+      "npm:@narumitw/pi-plan-mode@0.59.4"
       "git:https://github.com/hasit/pi-community-themes@v0.5.0"
     ];
     tokenSpeed = {

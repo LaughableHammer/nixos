@@ -3,7 +3,7 @@
 ## Adding an extension
 
 1. Add `<name>.ts` to this directory, default-exporting a function of the form
-   `(pi: ExtensionAPI) => void` (see `plan.ts` for the API in use).
+   `(pi: ExtensionAPI) => void` (see `notifications.ts` for the API in use).
 2. No Nix change is needed: `modules/home/ai/pi/default.nix` exposes this
    directory recursively as `~/.pi/agent/extensions`, which Pi auto-discovers.
 3. Rebuild, then restart Pi or run `/reload`:
@@ -22,40 +22,18 @@ full filesystem and network access and may spawn host commands (as
 
 ## `/plan`
 
-`plan.ts` adds an approval-gated planning mode to Pi. It is based on Pi's
-extension APIs and the upstream `examples/extensions/plan-mode` example, but is
-intentionally smaller and stricter:
+Plan mode comes from the [`@narumitw/pi-plan-mode`](https://pi.dev/packages/@narumitw/pi-plan-mode)
+package pinned in `packages` in `../default.nix`; there is no local `plan.ts`.
+Pi installs the package into its managed npm directory on first start. It adds
+a read-only `/plan` workflow (start, clarify, review, then implement in the same
+or a fresh session) and its settings live in `~/.pi/agent/pi-plan-mode.json`.
 
-- only `read`, `grep`, `find`, and `ls` are enabled while planning;
-- the model must propose a numbered solution before implementation;
-- the model is told not to ask its own approval question;
-- Pi presents explicit **Implement**, **Revise**, **Keep planning**, and
-  **Cancel** choices after the proposal;
-- the tool set active before planning is restored only after approval or
-  cancellation;
-- plan state survives session resume.
+The package's default tool policy targets Pi's built-in tool names. Under the
+sandbox, `read`/`write`/`edit`/`ls`/`find`/`grep`/`bash` are provided by
+`../sandbox/extension.ts` under those same names, so the policy applies as
+intended; mutating sandbox tools stay blocked while planning.
 
-Home Manager exposes this directory as `~/.pi/agent/extensions`, so after
-applying the configuration, restart Pi or run `/reload`.
-
-### Usage
-
-```text
-/plan add health checks to the service
-/plan revise include an integration test
-/plan implement
-/plan cancel
-```
-
-Running `/plan` without arguments toggles plan mode: it enables read-only plan
-mode when inactive, and disables it (restoring the previous tools) when active.
-In the interactive TUI, implementation/revision choices appear automatically
-after each proposal. The explicit subcommands are useful when a UI selector is
-unavailable.
-
-This is a slash command, not an LLM-callable custom tool: that is preferable
-for an approval boundary because the user, rather than the model, controls when
-planning starts and when implementation is authorized.
+Use `/plan settings` to choose the tool allowlist and other options.
 
 ## OpenRouter balance
 
