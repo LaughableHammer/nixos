@@ -41,6 +41,8 @@ const SANDBOX_TOOLS = ["read", "write", "edit", "ls", "find", "grep", "bash"];
 const GREP_DEFAULT_LIMIT = 100;
 const START_TIMEOUT_MS = 60_000;
 const STOP_TIMEOUT_MS = 5000;
+/** A streaming exec must be acknowledged quickly; only the command itself runs long. */
+const ACK_TIMEOUT_MS = 30_000;
 const SANDBOX_HOME = "/tmp/home";
 
 type SandboxMode = "rw" | "ro" | "none";
@@ -84,6 +86,14 @@ function unavailable(message: string): SandboxFailure {
   const error: SandboxFailure = new Error(message);
   error.code = SANDBOX_UNAVAILABLE;
   return error;
+}
+
+/** Convert a daemon error reply into the error the caller sees. */
+function toFailure(message: Record<string, unknown>): SandboxFailure {
+  const error = message.error as { code?: string; message?: string } | undefined;
+  const failure: SandboxFailure = new Error(error?.message ?? "sandbox request failed");
+  if (error?.code) failure.code = error.code;
+  return failure;
 }
 
 function readConfig(env: NodeJS.ProcessEnv): SandboxConfig | null {
@@ -275,24 +285,30 @@ class SandboxClient {
       // The exit event ends a streaming request.
       if (message.event === "exit") {
         this.pending.delete(id);
+        this.runIds.delete(id);
         if (entry.timer) clearTimeout(entry.timer);
       }
       return;
     }
+    // A failed request (for example an `exec` whose cwd is not a directory) may
+    // never produce an `exit` event, so it has to reject instead of resolving
+    // the ack; otherwise a streaming caller waits forever.
     if (entry.streaming) {
+      if (entry.timer) clearTimeout(entry.timer);
+      if (message.ok === false) {
+        this.pending.delete(id);
+        entry.reject(toFailure(message));
+        return;
+      }
       // Ack of a streaming request: resolve so the caller learns the run id, but
       // keep the entry registered for the events that follow.
-      if (entry.timer) clearTimeout(entry.timer);
       entry.resolve(message);
       return;
     }
     this.pending.delete(id);
     if (entry.timer) clearTimeout(entry.timer);
     if (message.ok === false) {
-      const error = message.error as { code?: string; message?: string } | undefined;
-      const failure: SandboxFailure = new Error(error?.message ?? "sandbox request failed");
-      if (error?.code) failure.code = error.code;
-      entry.reject(failure);
+      entry.reject(toFailure(message));
       return;
     }
     entry.resolve(message);
@@ -305,13 +321,15 @@ class SandboxClient {
       onEvent?: (message: Record<string, unknown>) => void;
       signal?: AbortSignal;
       streaming?: boolean;
+      /** Pre-allocated id, so the caller can register abort handling for it. */
+      id?: number;
     } = {},
   ): Promise<Record<string, unknown>> {
     const child = this.child;
     if (!child || this.dead) {
       return Promise.reject(this.dead ?? unavailable("sandbox is not running"));
     }
-    const id = this.nextId++;
+    const id = options.id ?? this.nextId++;
     return new Promise<Record<string, unknown>>((resolve, reject) => {
       const entry: PendingRequest = {
         resolve,
@@ -319,12 +337,19 @@ class SandboxClient {
         onEvent: options.onEvent,
         streaming: options.streaming === true,
       };
-      if (options.timeoutMs && options.timeoutMs > 0) {
+      // For a streaming request this timer only covers the ack; the command's
+      // own timeout is enforced inside the sandbox (`timeoutMs`).
+      const ackTimeoutMs = options.streaming
+        ? options.timeoutMs && options.timeoutMs > 0
+          ? options.timeoutMs
+          : ACK_TIMEOUT_MS
+        : options.timeoutMs;
+      if (ackTimeoutMs && ackTimeoutMs > 0) {
         entry.timer = setTimeout(() => {
           if (this.pending.delete(id)) {
             reject(unavailable(`sandbox request timed out: ${String(request.op)}`));
           }
-        }, options.timeoutMs);
+        }, ackTimeoutMs);
       }
       this.pending.set(id, entry);
       options.signal?.addEventListener(
@@ -417,7 +442,12 @@ class SandboxClient {
   }
 
   async kill(runId: number): Promise<void> {
-    await this.send({ op: "kill", runId, signal: "SIGKILL" }).catch(() => {});
+    // `send` rejects when the container is already gone; killing is best effort.
+    try {
+      await this.send({ op: "kill", runId, signal: "SIGKILL" });
+    } catch {
+      // Ignore; the run is gone with the container.
+    }
   }
 
   /**
@@ -444,6 +474,7 @@ class SandboxClient {
       rejectExit = reject;
     });
 
+    const pendingId = this.nextId++;
     const ack = this.send(
       {
         op: "exec",
@@ -453,6 +484,7 @@ class SandboxClient {
         env: sanitizeSessionEnv(options.env),
       },
       {
+        id: pendingId,
         signal: options.signal,
         streaming: true,
         onEvent: (message) => {
@@ -468,22 +500,39 @@ class SandboxClient {
       },
     );
 
+    // Abort must settle the call, not just stop the process: the agent loop waits
+    // on this promise, and a lost `exit` event would freeze the session.
+    const onAbort = () => {
+      const runId = this.runIds.get(pendingId);
+      if (runId !== undefined) void this.kill(runId);
+      rejectExit(new Error("aborted"));
+    };
+    if (options.signal) {
+      if (options.signal.aborted) onAbort();
+      else options.signal.addEventListener("abort", onAbort, { once: true });
+    }
+
     ack
       .then((response) => {
         const runId = typeof response.runId === "number" ? response.runId : undefined;
         if (runId === undefined) return;
+        this.runIds.set(pendingId, runId);
         options.onRunId?.(runId);
-        if (options.signal?.aborted) void this.kill(runId);
+        if (options.signal?.aborted) onAbort();
       })
       .catch((error: Error) => rejectExit(error));
 
-    const exit = await exited;
-    if (typeof exit.error === "string") throw new Error(exit.error);
-    return {
-      exitCode: typeof exit.code === "number" ? exit.code : null,
-      signal: typeof exit.signal === "string" ? exit.signal : null,
-      timedOut: exit.timedOut === true,
-    };
+    try {
+      const exit = await exited;
+      if (typeof exit.error === "string") throw new Error(exit.error);
+      return {
+        exitCode: typeof exit.code === "number" ? exit.code : null,
+        signal: typeof exit.signal === "string" ? exit.signal : null,
+        timedOut: exit.timedOut === true,
+      };
+    } finally {
+      options.signal?.removeEventListener("abort", onAbort);
+    }
   }
 
   /** `BashOperations` adapter: merged output, Pi's timeout/abort conventions. */
@@ -749,9 +798,17 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
     let isDirectory: boolean;
     try {
       isDirectory = (await client.stat(searchPath)).isDirectory;
-    } catch {
-      throw new Error(`Path not found: ${searchPath}`);
+    } catch (error) {
+      // Only a missing path is "not found"; sandbox failures must surface as-is,
+      // otherwise they look like ordinary tool errors and hide a broken sandbox.
+      if (isMissing(error)) throw new Error(`Path not found: ${searchPath}`);
+      throw error;
     }
+
+    // `rg` takes a file or a directory, but its cwd must be a directory. Using the
+    // file as cwd makes `spawn` fail, which used to leave the call waiting for an
+    // exit event that never came.
+    const runCwd = isDirectory ? searchPath : path.dirname(searchPath);
 
     const contextLines = params.context && params.context > 0 ? params.context : 0;
     const effectiveLimit = Math.max(1, params.limit ?? GREP_DEFAULT_LIMIT);
@@ -777,6 +834,10 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
     let currentRunId: number | undefined;
     let killedByLimit = false;
 
+    const stopOnLimit = (): void => {
+      if (currentRunId !== undefined) void client.kill(currentRunId);
+    };
+
     const consumeLine = (line: string): void => {
       if (!line.trim() || matchCount >= effectiveLimit) return;
       let event: {
@@ -798,17 +859,20 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
       if (matchCount >= effectiveLimit) {
         matchLimitReached = true;
         killedByLimit = true;
-        if (currentRunId !== undefined) void client.kill(currentRunId);
+        stopOnLimit();
       }
     };
 
     const result = await client.execStreaming(
       `rg ${args.map(quote).join(" ")}`,
-      searchPath,
+      runCwd,
       {
         signal,
         onRunId: (runId) => {
           currentRunId = runId;
+          // The limit can be reached before the ack arrives (rg streams output
+          // immediately), so re-check here instead of letting rg scan on.
+          if (matchLimitReached) stopOnLimit();
         },
         onStdout: (data) => {
           streamBuffer += data.toString("utf8");
