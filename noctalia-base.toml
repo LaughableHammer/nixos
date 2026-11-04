@@ -3,7 +3,7 @@ high_contrast = false
 ui_scale = 1.0
 
 [audio]
-enable_overdrive = false
+enable_overdrive = true
 enable_sounds = false
 notification_sound = ""
 sound_volume = 0.5
