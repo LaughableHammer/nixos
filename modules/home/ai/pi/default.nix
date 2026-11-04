@@ -119,6 +119,7 @@ in
     (if config.my.piSandbox.enable then config.my.piSandbox.launcher else plainLauncher)
     # Backs the host-side web_search extension (./extensions/brave-search.ts).
     pkgs.brave-search-cli
+    pkgs.wl-clipboard
   ];
 
   home.file.".pi/agent/settings.json".source = settingsFile;

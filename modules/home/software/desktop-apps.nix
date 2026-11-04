@@ -12,6 +12,7 @@
     nomacs
     slack
     mpv
+    obs-studio
   ];
 
   programs.thunderbird = {

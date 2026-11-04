@@ -13,8 +13,9 @@
  * The launcher loads it with `-e <this file> -nbt`, so a failure to load leaves
  * Pi with no built-in tools instead of unsandboxed ones (fail closed).
  */
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   DEFAULT_MAX_BYTES,
@@ -44,20 +45,52 @@ const STOP_TIMEOUT_MS = 5000;
 /** A streaming exec must be acknowledged quickly; only the command itself runs long. */
 const ACK_TIMEOUT_MS = 30_000;
 const SANDBOX_HOME = "/tmp/home";
+const SANDBOX_RECORD_TYPE = "pi-sandbox.config";
+const SANDBOX_RECORD_VERSION = 1;
 
-type SandboxMode = "rw" | "ro" | "none";
+const execFileAsync = promisify(execFile);
+
+type SandboxMode = "rw" | "ro" | "copy" | "none";
+
+/** An additional `-extraro`/`-extrarw` host directory mounted at its real path. */
+interface SandboxExtra {
+  path: string;
+  mode: "ro" | "rw";
+}
 
 interface SandboxConfig {
   command: string;
+  /** Host directory the sandbox was planned in. */
+  hostCwd: string;
   mode: SandboxMode;
   network: boolean;
   /** Working directory mounted into the sandbox, or null when nothing is mounted. */
   cwd: string | null;
+  /** Extra directories mounted alongside the working directory. */
+  extras: SandboxExtra[];
   /** Working directory inside the container. */
   workdir: string;
   scratch: string;
   apk: boolean;
   strict: boolean;
+}
+
+interface SandboxRecord {
+  version: 1;
+  mode: SandboxMode;
+  network: boolean;
+  extras: SandboxExtra[];
+}
+
+interface PreflightResult {
+  mode: SandboxMode;
+  network: boolean;
+  cwd: string | null;
+  workdir: string;
+  rootless: boolean;
+  extras: SandboxExtra[];
+  broad: string[];
+  masks: string[];
 }
 
 interface StatInfo {
@@ -96,20 +129,159 @@ function toFailure(message: Record<string, unknown>): SandboxFailure {
   return failure;
 }
 
+/** `PI_SANDBOX_EXTRA_MOUNTS` records are `ro:/abs/path` or `rw:/abs/path`, newline separated. */
+function parseExtras(raw: string | undefined): SandboxExtra[] {
+  if (!raw) return [];
+  const extras: SandboxExtra[] = [];
+  for (const line of raw.split("\n")) {
+    const record = line.trim();
+    if (!record) continue;
+    const separator = record.indexOf(":");
+    if (separator < 0) continue;
+    const mode = record.slice(0, separator);
+    const extraPath = record.slice(separator + 1);
+    if (mode !== "ro" && mode !== "rw") continue;
+    if (!extraPath.startsWith("/")) continue;
+    extras.push({ path: extraPath, mode });
+  }
+  return extras;
+}
+
 function readConfig(env: NodeJS.ProcessEnv): SandboxConfig | null {
   const command = env.PI_SANDBOX_CMD;
   if (!command) return null;
   const mode = env.PI_SANDBOX_MODE;
   return {
     command,
-    mode: mode === "rw" || mode === "ro" ? mode : "none",
+    hostCwd: env.PI_SANDBOX_HOST_CWD || process.cwd(),
+    mode: mode === "rw" || mode === "ro" || mode === "copy" ? mode : "none",
     network: env.PI_SANDBOX_NET !== "0",
     cwd: env.PI_SANDBOX_CWD ? env.PI_SANDBOX_CWD : null,
+    extras: parseExtras(env.PI_SANDBOX_EXTRA_MOUNTS),
     workdir: env.PI_SANDBOX_WORKDIR || "/tmp",
     scratch: env.PI_SANDBOX_SCRATCH || "/tmp",
     apk: env.PI_SANDBOX_APK === "1",
     strict: env.PI_SANDBOX_STRICT === "1",
   };
+}
+
+/** Validate a persisted `pi-sandbox.config` entry. */
+function parseRecord(data: unknown): SandboxRecord | null {
+  if (!data || typeof data !== "object") return null;
+  const record = data as Record<string, unknown>;
+  if (record.version !== SANDBOX_RECORD_VERSION) return null;
+  const mode = record.mode;
+  if (mode !== "rw" && mode !== "ro" && mode !== "copy" && mode !== "none") return null;
+  if (typeof record.network !== "boolean") return null;
+  if (!Array.isArray(record.extras)) return null;
+  const extras: SandboxExtra[] = [];
+  for (const candidate of record.extras) {
+    if (!candidate || typeof candidate !== "object") return null;
+    const item = candidate as Record<string, unknown>;
+    if (item.mode !== "ro" && item.mode !== "rw") return null;
+    if (typeof item.path !== "string" || !item.path.startsWith("/")) return null;
+    extras.push({ path: item.path, mode: item.mode });
+  }
+  return { version: 1, mode, network: record.network, extras };
+}
+
+/** The durable record for one run; the latest entry in a session wins. */
+function recordFromConfig(config: SandboxConfig): SandboxRecord {
+  return {
+    version: 1,
+    mode: config.mode,
+    network: config.network,
+    extras: config.extras.map((extra) => ({ path: extra.path, mode: extra.mode })),
+  };
+}
+
+function sameRecord(left: SandboxRecord, right: SandboxRecord): boolean {
+  return (
+    left.mode === right.mode &&
+    left.network === right.network &&
+    left.extras.length === right.extras.length &&
+    left.extras.every(
+      (extra, index) => extra.path === right.extras[index]?.path && extra.mode === right.extras[index]?.mode,
+    )
+  );
+}
+
+/** Run the Nix-side policy check for a candidate configuration. */
+async function runPreflight(
+  hostCwd: string,
+  mode: SandboxMode,
+  network: boolean,
+  extras: SandboxExtra[],
+): Promise<PreflightResult> {
+  const command = process.env.PI_SANDBOX_PREFLIGHT;
+  if (!command) throw unavailable("PI_SANDBOX_PREFLIGHT is not configured");
+  const args: string[] = [];
+  if (mode === "rw") args.push("-cwd");
+  else if (mode === "ro") args.push("-cwdro");
+  else if (mode === "copy") args.push("-copy");
+  if (!network) args.push("-local");
+  for (const extra of extras) {
+    args.push(extra.mode === "rw" ? "-extrarw" : "-extraro", extra.path);
+  }
+
+  let stdout: string;
+  try {
+    const result = await execFileAsync(command, args, {
+      cwd: hostCwd,
+      env: { ...process.env, PWD: hostCwd },
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+    });
+    stdout = result.stdout;
+  } catch (error) {
+    const failure = error as { stderr?: string; message?: string };
+    throw new Error(failure.stderr?.trim() || failure.message || "sandbox preflight failed");
+  }
+
+  const result: PreflightResult = {
+    mode,
+    network,
+    cwd: null,
+    workdir: "/tmp",
+    rootless: false,
+    extras: [],
+    broad: [],
+    masks: [],
+  };
+  for (const line of stdout.split("\n")) {
+    const separator = line.indexOf(":");
+    if (separator < 0) continue;
+    const key = line.slice(0, separator);
+    const value = line.slice(separator + 1);
+    switch (key) {
+      case "cwd":
+        result.cwd = value || null;
+        break;
+      case "workdir":
+        result.workdir = value || "/tmp";
+        break;
+      case "rootless":
+        result.rootless = value === "1";
+        break;
+      case "extra": {
+        const extraSeparator = value.indexOf(":");
+        if (extraSeparator < 0) break;
+        const extraMode = value.slice(0, extraSeparator);
+        const extraPath = value.slice(extraSeparator + 1);
+        if ((extraMode === "ro" || extraMode === "rw") && extraPath.startsWith("/")) {
+          result.extras.push({ path: extraPath, mode: extraMode });
+        }
+        break;
+      }
+      case "broad":
+        if (value) result.broad.push(value);
+        break;
+      case "mask":
+        if (value) result.masks.push(value);
+        break;
+    }
+  }
+  return result;
 }
 
 /** Resolve a tool path the way Pi's built-ins do: `~`, absolute, else relative to cwd. */
@@ -192,7 +364,13 @@ class SandboxClient {
   private dead: Error | null = null;
   private stderrTail = "";
 
-  constructor(private readonly config: SandboxConfig) {}
+  constructor(private config: SandboxConfig) {}
+
+  /** The deferred launcher resolves the real config after the session loads. */
+  setConfig(config: SandboxConfig): void {
+    if (this.child) return;
+    this.config = config;
+  }
 
   async ensureStarted(): Promise<void> {
     if (this.dead) throw this.dead;
@@ -208,11 +386,13 @@ class SandboxClient {
   private async start(): Promise<void> {
     const child = spawn(this.config.command, ["sandboxd"], {
       stdio: ["pipe", "pipe", "pipe"],
+      cwd: this.config.hostCwd,
       env: {
         PATH: process.env.PATH ?? "/run/current-system/sw/bin",
         HOME: process.env.HOME ?? "/tmp",
         TERM: process.env.TERM ?? "xterm-256color",
         LANG: process.env.LANG ?? "C.UTF-8",
+        PWD: this.config.hostCwd,
         DOCKER_HOST: process.env.DOCKER_HOST ?? "",
         // The runner needs the prepared sandbox environment; nothing else from
         // the host process is forwarded to it.
@@ -597,11 +777,9 @@ function quote(value: string): string {
 }
 
 export default function sandboxExtension(pi: ExtensionAPI): void {
-  const config = readConfig(process.env);
-  const hostCwd = process.cwd();
-  const sandboxCwd = config?.workdir ?? hostCwd;
+  const initialConfig = readConfig(process.env);
 
-  if (!config) {
+  if (!initialConfig) {
     // Loaded outside the launcher: refuse to run tools rather than silently
     // falling back to unsandboxed host execution.
     pi.on("session_start", async (_event, ctx) => {
@@ -613,28 +791,215 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
     return;
   }
 
+  let config: SandboxConfig = initialConfig;
+  const sandboxCwd = config.workdir;
+  const deferred = process.env.PI_SANDBOX_DEFERRED === "1";
   const client = new SandboxClient(config);
   let sandboxReady = false;
+  let resolution: Promise<SandboxConfig> | null = null;
+  let firstSession = true;
+  let pendingRecord: SandboxRecord | null = null;
+
+  /** The latest persisted sandbox record in the active session. */
+  function latestRecord(ctx: ExtensionContext): SandboxRecord | undefined {
+    let latest: SandboxRecord | undefined;
+    for (const entry of ctx.sessionManager.getEntries()) {
+      if (entry.type !== "custom" || entry.customType !== SANDBOX_RECORD_TYPE) continue;
+      const record = parseRecord((entry as { data?: unknown }).data);
+      if (record) latest = record;
+    }
+    return latest;
+  }
+
+  function appendRecord(ctx: ExtensionContext, record: SandboxRecord): void {
+    pendingRecord = record;
+    try {
+      pi.appendEntry(SANDBOX_RECORD_TYPE, record);
+      pendingRecord = null;
+    } catch {
+      // Retried once at the first agent start; a missing record only means the
+      // next resume falls back to the default sandbox.
+    }
+  }
+
+  async function resolveConfig(): Promise<SandboxConfig> {
+    if (!deferred) return config;
+    if (!resolution) throw unavailable("sandbox configuration has not been resolved yet");
+    try {
+      return await resolution;
+    } catch (error) {
+      throw isUnavailable(error) ? error : unavailable(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   async function ensureSandbox(): Promise<SandboxClient> {
+    const resolved = await resolveConfig();
+    client.setConfig(resolved);
     if (sandboxReady) return client;
     await client.ensureStarted();
     sandboxReady = true;
     return client;
   }
 
-  /** In `none` mode relative paths resolve inside the sandbox workdir. */
+  function defaultModeFromEnv(): SandboxMode {
+    const mode = process.env.PI_SANDBOX_DEFAULT_MODE;
+    return mode === "rw" || mode === "ro" || mode === "copy" ? mode : "none";
+  }
+
+  function configFromRecord(record: SandboxRecord, hostCwd: string, base: SandboxConfig): SandboxConfig {
+    return {
+      ...base,
+      hostCwd,
+      mode: record.mode,
+      network: record.network,
+      cwd: null,
+      extras: record.extras,
+      workdir: "/tmp",
+      apk: false,
+      scratch: "/tmp",
+    };
+  }
+
+  function applyPlan(
+    ctx: ExtensionContext,
+    candidate: SandboxConfig,
+    plan: PreflightResult,
+    assumeYes: boolean,
+  ): SandboxConfig {
+    const resolved: SandboxConfig = {
+      ...candidate,
+      hostCwd: ctx.cwd,
+      mode: plan.mode,
+      network: plan.network,
+      cwd: plan.cwd,
+      extras: plan.extras,
+      workdir: plan.workdir,
+      apk: plan.rootless,
+    };
+    config = resolved;
+    process.env.PI_SANDBOX_MODE = resolved.mode;
+    process.env.PI_SANDBOX_NET = resolved.network ? "1" : "0";
+    process.env.PI_SANDBOX_EXTRA_MOUNTS = resolved.extras
+      .map((extra) => `${extra.mode}:${extra.path}`)
+      .join("\n");
+    process.env.PI_SANDBOX_ASSUME_YES = assumeYes ? "1" : "0";
+    // Make the resolved plan readable to a reloaded extension instance. The
+    // runner still prepares its own scratch because the deferred launcher never
+    // set PI_SANDBOX_PREPARED.
+    process.env.PI_SANDBOX_DEFERRED = "0";
+    process.env.PI_SANDBOX_HOST_CWD = resolved.hostCwd;
+    process.env.PI_SANDBOX_CWD = resolved.cwd ?? "";
+    process.env.PI_SANDBOX_WORKDIR = resolved.workdir;
+    process.env.PI_SANDBOX_APK = resolved.apk ? "1" : "0";
+    if (!resolved.network) process.env.PI_WEB = "0";
+    appendRecord(ctx, recordFromConfig(resolved));
+    ctx.ui.setStatus("sandbox", ctx.ui.theme.fg("accent", statusLabel(resolved)));
+    return resolved;
+  }
+
+  function broadMessage(plan: PreflightResult): string {
+    const masks = plan.masks.length > 0 ? `\nMasked inside: ${plan.masks.join(", ")}` : "";
+    const network = plan.network
+      ? "\nNetwork is enabled, so anything the agent reads can leave this machine."
+      : "";
+    return `The sandbox will mount: ${plan.broad.join(", ")}.${masks}${network}\nPrefer a project directory, -cwdro for review, or -local for sensitive work.`;
+  }
+
+  async function resolveDeferredConfig(ctx: ExtensionContext): Promise<SandboxConfig> {
+    const recorded = latestRecord(ctx);
+    const fallback: SandboxConfig = {
+      ...config,
+      hostCwd: ctx.cwd,
+      mode: defaultModeFromEnv(),
+      network: true,
+      cwd: null,
+      extras: [],
+      workdir: "/tmp",
+      apk: false,
+      scratch: "/tmp",
+    };
+
+    const reuse = recorded
+      ? { kind: "reuse" as const, label: `Reuse previous sandbox: ${describeRecord(recorded)}` }
+      : null;
+    const fallbackOption = {
+      kind: "default" as const,
+      label: `Use default sandbox: ${describeRecord({ version: 1, mode: fallback.mode, network: true, extras: [] })}`,
+    };
+    const exitOption = {
+      kind: "exit" as const,
+      label: "Exit Pi (rerun with different sandbox flags)",
+    };
+    const options = [...(reuse ? [reuse] : []), fallbackOption, exitOption];
+
+    let selected = options[0];
+    if (ctx.hasUI) {
+      const choice = await ctx.ui.select(
+        "Sandbox for this resumed session\nTo change mounts, exit and rerun with pi -cwd, -cwdro, -copy or -local (plus -extraro/-extrarw).",
+        options.map((option) => option.label),
+      );
+      selected = options.find((option) => option.label === choice) ?? selected;
+    }
+
+    if (selected.kind === "exit") {
+      ctx.ui.notify(
+        "Rerun with explicit flags, for example: pi -cwd -r (or pi -cwd --session <id>).",
+        "info",
+      );
+      ctx.shutdown();
+      throw unavailable("sandbox selection cancelled; restart Pi with explicit sandbox flags");
+    }
+
+    let candidate = selected.kind === "reuse" && recorded ? configFromRecord(recorded, ctx.cwd, fallback) : fallback;
+    let plan: PreflightResult;
+    try {
+      plan = await runPreflight(ctx.cwd, candidate.mode, candidate.network, candidate.extras);
+    } catch (error) {
+      if (selected.kind !== "reuse") throw error;
+      ctx.ui.notify(
+        `Previous sandbox could not be reused: ${error instanceof Error ? error.message : String(error)}. Using the default sandbox.`,
+        "warning",
+      );
+      candidate = fallback;
+      plan = await runPreflight(ctx.cwd, candidate.mode, candidate.network, candidate.extras);
+    }
+
+    let assumeYes = process.env.PI_SANDBOX_ASSUME_YES === "1";
+    if (plan.broad.length > 0 && !assumeYes) {
+      const canConfirm = ctx.hasUI;
+      const confirmed = canConfirm
+        ? await ctx.ui.confirm("Broad sandbox mount", broadMessage(plan))
+        : false;
+      if (!confirmed) {
+        // Fail closed without a confirmation. The default is safe whenever it
+        // is not itself broad; otherwise the tools stay unavailable.
+        const fallbackPlan = await runPreflight(ctx.cwd, fallback.mode, fallback.network, fallback.extras);
+        if (fallbackPlan.broad.length > 0) {
+          throw unavailable(
+            "refusing a broad sandbox mount without confirmation; pass -yes or choose explicit flags",
+          );
+        }
+        if (canConfirm) ctx.ui.notify("Using the default sandbox instead.", "warning");
+        return applyPlan(ctx, fallback, fallbackPlan, false);
+      }
+      assumeYes = true;
+    }
+
+    return applyPlan(ctx, candidate, plan, assumeYes);
+  }
+
+  /** In `none`/`copy` modes relative paths resolve inside the sandbox workdir. */
   function rewritePath(input: string | undefined, fallback: string): string | undefined {
-    if (config?.cwd) return input;
-    if (input === undefined) return resolvePath(fallback, config?.workdir ?? "/tmp");
+    const base = config.cwd ?? config.workdir;
+    if (input === undefined) return resolvePath(fallback, base);
     if (path.isAbsolute(input) || input.startsWith("~") || input.startsWith("@/")) return input;
-    return resolvePath(input, config?.workdir ?? "/tmp");
+    return resolvePath(input, base);
   }
 
   /** Map Pi's cwd onto a path that exists inside the container. */
   function toSandboxCwd(cwd: string): string {
-    if (config?.cwd && (cwd === config.cwd || cwd.startsWith(`${config.cwd}/`))) return cwd;
-    return config?.workdir ?? "/tmp";
+    if (config.cwd && (cwd === config.cwd || cwd.startsWith(`${config.cwd}/`))) return cwd;
+    return config.workdir;
   }
 
   function fail(error: unknown) {
@@ -1094,7 +1459,7 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
 
   pi.on("user_bash", async () => ({ operations: bashOperations }));
 
-  if (config.strict) {
+  if (initialConfig.strict) {
     pi.on("tool_call", async (event) => {
       if (SANDBOX_TOOLS.includes(event.toolName)) return;
       return {
@@ -1104,8 +1469,50 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
     });
   }
 
-  pi.on("session_start", async (_event, ctx) => {
+  pi.on("session_start", async (event, ctx) => {
+    const first = firstSession;
+    firstSession = false;
+
+    // The deferred launcher has no mounts yet. Resolve them after the handler
+    // returns: Pi's TUI is not ready for dialogs during session_start.
+    if (deferred && first) {
+      ctx.ui.setStatus("sandbox", ctx.ui.theme.fg("accent", "🔒 sandbox: selecting…"));
+      let resolveFn!: (value: SandboxConfig) => void;
+      let rejectFn!: (error: Error) => void;
+      resolution = new Promise<SandboxConfig>((resolve, reject) => {
+        resolveFn = resolve;
+        rejectFn = reject;
+      });
+      // Tools await resolution; this catch only prevents an unhandled rejection
+      // when the user exits before anything calls a tool.
+      void resolution.catch(() => {});
+      setTimeout(() => {
+        void resolveDeferredConfig(ctx).then(resolveFn, (error) => {
+          const failure = error instanceof Error ? error : new Error(String(error));
+          ctx.ui.notify(`Sandbox unavailable: ${failure.message}`, "error");
+          rejectFn(failure);
+        });
+      }, 0);
+      return;
+    }
+
+    if (event.reason === "resume" && !first) {
+      const recorded = latestRecord(ctx);
+      if (recorded && !sameRecord(recorded, recordFromConfig(config))) {
+        ctx.ui.notify(
+          "This session was last used with a different sandbox. Mounts cannot change until Pi restarts; exit and run `pi -r` again to pick its sandbox.",
+          "warning",
+        );
+      } else if (!recorded) {
+        ctx.ui.notify("This session has no recorded sandbox; the current mounts stay in effect.", "info");
+      }
+      ctx.ui.setStatus("sandbox", ctx.ui.theme.fg("accent", statusLabel(config)));
+      return;
+    }
+
     ctx.ui.setStatus("sandbox", ctx.ui.theme.fg("accent", statusLabel(config)));
+    if (event.reason === "reload") return;
+    appendRecord(ctx, recordFromConfig(config));
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
@@ -1119,17 +1526,37 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
    * cannot do. They describe restrictions; the container is the boundary.
    */
   pi.on("before_agent_start", async (event) => {
+    let resolved: SandboxConfig;
+    try {
+      resolved = await resolveConfig();
+    } catch {
+      event.systemPromptOptions.promptGuidelines ??= [];
+      event.systemPromptOptions.promptGuidelines.push(
+        "The sandbox is unavailable; tool calls will fail. Restart Pi and choose a sandbox or pass explicit sandbox flags.",
+      );
+      return;
+    }
+
+    if (pendingRecord) {
+      try {
+        pi.appendEntry(SANDBOX_RECORD_TYPE, pendingRecord);
+        pendingRecord = null;
+      } catch {
+        // A missing record only means the next resume falls back to default.
+      }
+    }
+
     const activeTools = new Set(pi.getActiveTools());
     const hasBash = activeTools.has("bash");
     const guidelines: string[] = [];
 
-    if (hasBash && config.network) {
+    if (hasBash && resolved.network) {
       guidelines.push(
         "Avoid recalling information about source available software and instead answer definitively by cloning the source to /tmp and referring to it",
       );
       guidelines.push("`uv` is available for Python packages");
       guidelines.push(
-        config.apk
+        resolved.apk
           ? "You are in an Alpine linux container with a read-only /nix volume mounted in. Use apk to install packages."
           : "You are in an Alpine linux container with a read-only /nix volume mounted in.",
       );
@@ -1139,32 +1566,68 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
         "Nix builds are unavailable in the sandbox: ask the user to run `nix build` on the host.",
       );
     }
-    if (!config.network) {
+    if (!resolved.network) {
       guidelines.push("You are in a sandbox with no network access.");
     }
-    if (config.cwd) {
+    if (resolved.cwd) {
       guidelines.push(
         "The user has mounted data into the sandbox at the current working directory. The user's question will be in reference to the data in the current working directory.",
       );
     }
-    if (config.mode === "ro") {
+    if (resolved.extras.length > 0) {
+      const mounted = resolved.extras
+        .map((extra) => `${extra.path} (${extra.mode === "rw" ? "read-write" : "read-only"})`)
+        .join(", ");
+      guidelines.push(
+        `Additional host directories are mounted inside the sandbox at their absolute paths: ${mounted}. Use absolute paths; ~ does not reach them.`,
+      );
+    }
+    if (resolved.mode === "ro") {
       guidelines.push("The current working directory is read-only; write scratch files to /tmp.");
     }
-    if (config.mode === "none") {
+    if (resolved.mode === "none") {
       guidelines.push("The current working directory is not mounted; work in /tmp.");
     }
-    if (config.mode === "copy") {
+    if (resolved.mode === "copy") {
       guidelines.push(
         "The original working directory is not mounted; a private copy of it is at /tmp/work.",
       );
     }
 
+    event.systemPromptOptions.promptGuidelines ??= [];
     event.systemPromptOptions.promptGuidelines.push(...guidelines);
   });
 }
 
+/**
+ * Describe what the container can reach. `none` means "nothing mounted", not
+ * "no sandbox": every launcher run (except `-insecure`) is sandboxed, so the
+ * label must not read as if the tools were back on the host.
+ */
+function mountLabel(config: { mode: SandboxMode }): string {
+  switch (config.mode) {
+    case "rw":
+      return "cwd rw";
+    case "ro":
+      return "cwd ro";
+    case "copy":
+      return "cwd copy";
+    default:
+      return "/tmp only";
+  }
+}
+
 function statusLabel(config: SandboxConfig): string {
-  const parts = [config.mode, config.network ? "net on" : "net off"];
+  const parts = [mountLabel(config)];
+  if (config.extras.length > 0) parts.push(`+${config.extras.length} extra`);
+  parts.push(config.network ? "net on" : "net off");
   if (config.strict) parts.push("strict");
   return `🔒 sandbox: ${parts.join(" · ")}`;
+}
+
+function describeRecord(record: SandboxRecord): string {
+  const parts = [mountLabel(record)];
+  if (record.extras.length > 0) parts.push(`+${record.extras.length} extra`);
+  parts.push(record.network ? "net on" : "net off");
+  return parts.join(" · ");
 }

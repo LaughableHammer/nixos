@@ -114,3 +114,18 @@ the shell prompt; commands spawned by Pi's bash tool are captured by Pi rather
 than reported as shell-integration jobs, so they do not produce completion
 notifications.
 
+## Run timing
+
+`run-timing.ts` puts a light gray elapsed timer above the editor, on the left.
+It starts when a prompt is accepted and stops at `agent_settled` — the point
+where retries, overflow recovery, compaction and queued follow-ups are finished
+and Pi is no longer working — so the final value covers the model's thinking,
+every tool call and the complete answer. Time spent on the prompt before it
+reaches the agent (prompt expansion, pre-prompt compaction) is included; an
+invalid prompt, or one that another extension handles, never starts the
+timer.
+
+The final time stays visible until the next request replaces it. A new session
+clears it. Nothing is written to the transcript or sent to the model.
+
+Pi's own per-tool timers are untouched.

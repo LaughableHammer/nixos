@@ -33,12 +33,13 @@ Some inputs are pinned to specific revisions in `flake.nix`. Do not blindly `nix
 
 `modules/home/ai/pi/sandbox/` routes Pi's built-in tools into a Docker container while the harness (credentials, provider traffic, sessions, extensions) stays on the host:
 
-- `default.nix` — all policy: the Alpine image pin, mount/refusal/masking rules (`pi-sandbox-lib.sh`), the container invocation (`pi-sandbox-exec`), the `pi` launcher, and the `pi-sandbox-shell`/`pi-sandbox-doctor` helpers. Options live under `my.piSandbox`.
+- `default.nix` — all policy: the Alpine image pin, mount/refusal/masking rules (`pi-sandbox-lib.sh`), the container invocation (`pi-sandbox-exec`), the `pi` launcher, and the `pi-sandbox-shell`/`pi-sandbox-doctor`/`pi-sandbox-preflight` helpers. Options live under `my.piSandbox`.
 - `sandboxd.mjs` — supervisor inside the container; serves file operations and `bash -c` over newline-delimited JSON.
 - `extension.ts` — thin client in the host Pi process: tool-operation adapters, `grep`/`find` routed to sandboxed `rg`/`fd`, and the short sandbox guidelines appended to the system prompt.
-- Flags: `-cwd` (mount rw), `-cwdro` (mount ro), `-copy` (no mount, private copy), `-local` (no sandbox network), `-insecure` (no sandbox), `-yes` (accept broad-mount warning).
+- Flags: `-cwd` (mount rw), `-cwdro` (mount ro), `-extraro DIR`/`-extrarw DIR` (extra mounts, repeatable, same checks and masks as `-cwd`), `-copy` (no mount, private copy; incompatible with extras), `-local` (no sandbox network), `-insecure` (no sandbox), `-yes` (accept broad-mount warning).
+- Resume: each run stores its sandbox as a `pi-sandbox.config` custom session entry. `pi -r`/`-c`/`--session`/`--fork` without explicit flags defers preparation until the extension has offered reuse/default/exit, then validates the plan with `pi-sandbox-preflight`; explicit flags and `-insecure` bypass this. `-insecure` runs are never recorded.
 - Keep policy in Nix, not in the extension: the container, not the client, decides what a path means.
-- Requires rootless Docker (`virtualisation.docker.rootless`); `pi-sandbox-doctor <none|ro|rw|copy>` verifies isolation, masks and tooling.
+- Requires rootless Docker (`virtualisation.docker.rootless`); `pi-sandbox-doctor <none|ro|rw|copy>` verifies isolation, masks and tooling, and `pi-sandbox-preflight` verifies a flag combination without starting a container.
 
 ## Pi extensions
 

@@ -181,31 +181,98 @@ let
       pi_sandbox_die "refusing a broad mount without a terminal; pass -yes to accept, or -insecure"
     }
 
-    # Emit docker mount arguments that mask sensitive host paths inside a mount.
-    pi_sandbox_compute_mounts() {
-      local root="$1" scratch="$2" out="$3"
-      : > "$out"
-      [ -n "$root" ] || return 0
-      : > "$scratch/.mask-empty"
-      local entry other abs skip
-      for entry in "''${PI_SANDBOX_MASK_PATHS[@]}"; do
-        abs="$HOME/$entry"
-        [ -e "$abs" ] || continue
-        case "$abs/" in
-          "$root"/*) ;;
-          *) continue ;;
+    # Validate one `-extraro`/`-extrarw` argument and print a `mode:realpath`
+    # record. Resolving here keeps relative paths anchored to the launcher's
+    # working directory rather than to whatever later re-runs prepare.
+    pi_sandbox_extra_record() {
+      local mode="$1" path="$2" flag="$3"
+      [ -d "$path" ] || pi_sandbox_die "$flag: not a directory: $path"
+      printf '%s:%s\n' "$mode" "$(realpath -- "$path")"
+    }
+
+    # Load PI_SANDBOX_EXTRA_MOUNTS into PI_SANDBOX_EXTRAS, re-validating each
+    # record so a re-run of prepare (pi-sandbox-exec) enforces the same policy.
+    pi_sandbox_load_extras() {
+      local record mode path
+      PI_SANDBOX_EXTRAS=()
+      [ -n "''${PI_SANDBOX_EXTRA_MOUNTS:-}" ] || return 0
+      while IFS= read -r record; do
+        [ -n "$record" ] || continue
+        mode="''${record%%:*}"
+        path="''${record#*:}"
+        case "$mode" in
+          ro | rw) ;;
+          *) pi_sandbox_die "invalid extra mount record: $record" ;;
         esac
-        skip=0
-        for other in "''${PI_SANDBOX_MASK_PATHS[@]}"; do
-          [ "$other" = "$entry" ] && continue
-          case "$entry" in "$other"/*) skip=1 ;; esac
-        done
-        [ "$skip" = "1" ] && continue
-        if [ -d "$abs" ]; then
-          printf -- '--tmpfs\n%s\n' "$abs:rw,size=1m,mode=0700" >> "$out"
-        else
-          printf -- '-v\n%s:%s:ro\n' "$scratch/.mask-empty" "$abs" >> "$out"
+        [ -d "$path" ] || pi_sandbox_die "-extraro/-extrarw: not a directory: $path"
+        PI_SANDBOX_EXTRAS+=("$mode:$(realpath -- "$path")")
+      done <<< "$PI_SANDBOX_EXTRA_MOUNTS"
+    }
+
+    # Append a `mode:realpath` mount root. Duplicate paths and extras already
+    # covered by another root are dropped rather than refused, so `-cwd
+    # -extrarw .` is harmless. Roots may nest; masking dedupes by destination and
+    # so still applies inside a nested mount.
+    pi_sandbox_add_mount_root() {
+      local mode="$1" path="$2" existing other
+      for existing in ''${PI_SANDBOX_MOUNT_ROOTS[@]+"''${PI_SANDBOX_MOUNT_ROOTS[@]}"}; do
+        other="''${existing#*:}"
+        if [ "$other" = "$path" ]; then
+          pi_sandbox_log "$path is already mounted; ignoring duplicate"
+          return 0
         fi
+        case "$path/" in
+          "$other"/*)
+            pi_sandbox_log "$path is already inside $other; not mounting it again"
+            return 0
+            ;;
+        esac
+      done
+      PI_SANDBOX_MOUNT_ROOTS+=("$mode:$path")
+    }
+
+    # Emit every host mount argument: one bind per mount root, then masks for the
+    # sensitive host paths that live inside any of them. Masks are appended last
+    # so they always override the bind that contains them.
+    pi_sandbox_compute_mounts() {
+      local scratch="$1" out="$2"
+      : > "$out"
+      [ "''${#PI_SANDBOX_MOUNT_ROOTS[@]}" -gt 0 ] || return 0
+      : > "$scratch/.mask-empty"
+      local record mode root entry other abs skip
+      declare -A masked=()
+      for record in "''${PI_SANDBOX_MOUNT_ROOTS[@]}"; do
+        mode="''${record%%:*}"
+        root="''${record#*:}"
+        if [ "$mode" = "rw" ]; then
+          printf -- '-v\n%s:%s\n' "$root" "$root" >> "$out"
+        else
+          printf -- '-v\n%s:%s:ro\n' "$root" "$root" >> "$out"
+        fi
+      done
+      for record in "''${PI_SANDBOX_MOUNT_ROOTS[@]}"; do
+        root="''${record#*:}"
+        for entry in "''${PI_SANDBOX_MASK_PATHS[@]}"; do
+          abs="$HOME/$entry"
+          [ -e "$abs" ] || continue
+          case "$abs/" in
+            "$root"/*) ;;
+            *) continue ;;
+          esac
+          skip=0
+          for other in "''${PI_SANDBOX_MASK_PATHS[@]}"; do
+            [ "$other" = "$entry" ] && continue
+            case "$entry" in "$other"/*) skip=1 ;; esac
+          done
+          [ "$skip" = "1" ] && continue
+          [ -z "''${masked[$abs]:-}" ] || continue
+          masked[$abs]=1
+          if [ -d "$abs" ]; then
+            printf -- '--tmpfs\n%s\n' "$abs:rw,size=1m,mode=0700" >> "$out"
+          else
+            printf -- '-v\n%s:%s:ro\n' "$scratch/.mask-empty" "$abs" >> "$out"
+          fi
+        done
       done
     }
 
@@ -258,30 +325,30 @@ let
       fi
     }
 
-    # Populate PI_SANDBOX_* for one run. Expects PI_SANDBOX_MODE and
-    # PI_SANDBOX_NET to be set by the caller.
-    pi_sandbox_prepare() {
-      if [ "''${PI_SANDBOX_PREPARED:-0}" = "1" ]; then
-        return 0
-      fi
-
+    # Resolve a mode/network/extra-mount combination into mount roots, the
+    # container working directory and the host cwd. This is the policy-only
+    # half of prepare: it never creates scratch state, loads images or prints
+    # warnings, so the resume preflight can use it without side effects.
+    pi_sandbox_plan() {
       local mount_root
       mount_root="$(realpath -- "$PWD")"
       pi_sandbox_select_docker
+      pi_sandbox_load_extras
 
       PI_SANDBOX_CWD=""
       PI_SANDBOX_WORKDIR="/tmp"
+      PI_SANDBOX_MOUNT_ROOTS=()
       case "$PI_SANDBOX_MODE" in
         rw | ro)
-          pi_sandbox_check_mount_root "$mount_root"
-          if pi_sandbox_is_broad "$mount_root"; then
-            pi_sandbox_warn_broad "$mount_root"
-            pi_sandbox_confirm_broad
-          fi
           PI_SANDBOX_CWD="$mount_root"
           PI_SANDBOX_WORKDIR="$mount_root"
+          pi_sandbox_add_mount_root "$PI_SANDBOX_MODE" "$mount_root"
           ;;
         copy)
+          # `-copy` promises that nothing outside the scratch directory comes
+          # from the host; an extra mount would break that.
+          [ "''${#PI_SANDBOX_EXTRAS[@]}" -eq 0 ] \
+            || pi_sandbox_die "-copy cannot be combined with -extraro/-extrarw (nothing is mounted from the host)"
           pi_sandbox_check_mount_root "$mount_root"
           PI_SANDBOX_WORKDIR="/tmp/work"
           ;;
@@ -289,16 +356,52 @@ let
         *) pi_sandbox_die "unknown mode: $PI_SANDBOX_MODE" ;;
       esac
 
+      local extra
+      for extra in "''${PI_SANDBOX_EXTRAS[@]}"; do
+        pi_sandbox_add_mount_root "''${extra%%:*}" "''${extra#*:}"
+      done
+
+      local root
+      for root in "''${PI_SANDBOX_MOUNT_ROOTS[@]}"; do
+        pi_sandbox_check_mount_root "''${root#*:}"
+      done
+    }
+
+    # Populate PI_SANDBOX_* for one run. Expects PI_SANDBOX_MODE and
+    # PI_SANDBOX_NET to be set by the caller.
+    pi_sandbox_prepare() {
+      if [ "''${PI_SANDBOX_PREPARED:-0}" = "1" ]; then
+        return 0
+      fi
+
+      pi_sandbox_plan
+
+      # Warn about every broad root before anything is created, so one
+      # confirmation covers the whole run.
+      local root broad_roots=()
+      for root in "''${PI_SANDBOX_MOUNT_ROOTS[@]}"; do
+        root="''${root#*:}"
+        if pi_sandbox_is_broad "$root"; then
+          broad_roots+=("$root")
+        fi
+      done
+      for root in "''${broad_roots[@]}"; do
+        pi_sandbox_warn_broad "$root"
+      done
+      if [ "''${#broad_roots[@]}" -gt 0 ]; then
+        pi_sandbox_confirm_broad
+      fi
+
       pi_sandbox_sweep_stale
       PI_SANDBOX_SCRATCH="$(mktemp -d "/var/tmp/pi-sandbox-$(id -u).XXXXXXXX")"
       chmod 700 "$PI_SANDBOX_SCRATCH"
       mkdir -p "$PI_SANDBOX_SCRATCH/home" "$PI_SANDBOX_SCRATCH/host-tmp"
 
       PI_SANDBOX_MOUNT_ARGS_FILE="$PI_SANDBOX_SCRATCH/.mount-args"
-      pi_sandbox_compute_mounts "''${PI_SANDBOX_CWD:-}" "$PI_SANDBOX_SCRATCH" "$PI_SANDBOX_MOUNT_ARGS_FILE"
+      pi_sandbox_compute_mounts "$PI_SANDBOX_SCRATCH" "$PI_SANDBOX_MOUNT_ARGS_FILE"
 
       if [ "$PI_SANDBOX_MODE" = "copy" ]; then
-        pi_sandbox_seed_copy "$mount_root" "$PI_SANDBOX_SCRATCH/work"
+        pi_sandbox_seed_copy "$(realpath -- "$PWD")" "$PI_SANDBOX_SCRATCH/work"
       fi
 
       # Give tools a writable home and a git identity that does not depend on the
@@ -328,6 +431,7 @@ let
       PI_SANDBOX_PATH="$PI_SANDBOX_PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
       export PI_SANDBOX_CWD PI_SANDBOX_WORKDIR PI_SANDBOX_SCRATCH PI_SANDBOX_MOUNT_ARGS_FILE
+      export PI_SANDBOX_EXTRA_MOUNTS
       export PI_SANDBOX_DOCKER_USER PI_SANDBOX_APK PI_SANDBOX_PATH PI_SANDBOX_PREPARED=1
       export PI_SANDBOX_CMD="$PI_SANDBOX_EXEC"
       export TMPDIR="$PI_SANDBOX_SCRATCH/host-tmp"
@@ -343,93 +447,152 @@ let
   # Runs a command inside a fresh sandbox container. The extension spawns
   # `pi-sandbox-exec sandboxd`; the helper commands run a shell instead.
   sandboxExec = pkgs.writeShellScriptBin "pi-sandbox-exec" ''
+        set -euo pipefail
+        source ${sandboxLib}
+
+        PI_SANDBOX_EXEC="$0"
+        export PI_SANDBOX_EXEC
+
+        if [ "''${PI_SANDBOX_PREPARED:-0}" != "1" ]; then
+          PI_SANDBOX_MODE="''${PI_SANDBOX_MODE:-none}"
+          PI_SANDBOX_NET="''${PI_SANDBOX_NET:-1}"
+          export PI_SANDBOX_MODE PI_SANDBOX_NET
+          pi_sandbox_prepare
+          trap pi_sandbox_cleanup EXIT
+        fi
+        pi_sandbox_ensure_image
+
+        entry=()
+        if [ "''${1:-sandboxd}" = "sandboxd" ]; then
+          entry=("$PI_SANDBOX_NODE" "$PI_SANDBOX_SANDBOXD")
+        else
+          [ "''${1:-}" = "--" ] && shift
+          entry=("$@")
+        fi
+        [ "''${#entry[@]}" -gt 0 ] || pi_sandbox_die "pi-sandbox-exec: no command given"
+
+        args=(
+          run --rm --interactive --init
+          --name "pi-sandbox-$$"
+          --label pi-sandbox=1
+          --security-opt no-new-privileges
+          --pids-limit ${toString cfg.limits.pids}
+          --memory ${cfg.limits.memory}
+          --cpus ${toString cfg.limits.cpus}
+          --workdir "$PI_SANDBOX_WORKDIR"
+        )
+        if [ "''${PI_SANDBOX_NET:-1}" = "0" ]; then
+          args+=(--network none)
+        fi
+        if [ -n "$PI_SANDBOX_DOCKER_USER" ]; then
+          args+=(--user "$PI_SANDBOX_DOCKER_USER")
+        fi
+        if [ -t 0 ] && [ -t 1 ]; then
+          args+=(--tty)
+        fi
+        args+=(
+          -v "$PI_SANDBOX_SCRATCH:/tmp"
+          -v "$PI_SANDBOX_SCRATCH:$PI_SANDBOX_SCRATCH"
+          -v /nix/store:/nix/store:ro
+          -v /nix/var/nix/profiles:/nix/var/nix/profiles:ro
+          -v /run/current-system/sw/bin:/run/current-system/sw/bin:ro
+        )
+        # Project and extra-directory binds plus masks, in the order
+        # pi_sandbox_compute_mounts emitted them.
+        while IFS= read -r mount_arg; do
+          [ -n "$mount_arg" ] && args+=("$mount_arg")
+        done < "$PI_SANDBOX_MOUNT_ARGS_FILE"
+        args+=(
+          -e HOME=/tmp/home
+          -e TMPDIR=/tmp
+          -e XDG_CACHE_HOME=/tmp/home/.cache
+          -e UV_CACHE_DIR=/tmp/home/.cache/uv
+          -e "PATH=$PI_SANDBOX_PATH"
+          -e "SANDBOX_SHELL=$PI_SANDBOX_BASH"
+          -e "SSL_CERT_FILE=${cacertBundle}"
+          -e "NIX_SSL_CERT_FILE=${cacertBundle}"
+          -e GIT_OPTIONAL_LOCKS=0
+          -e PYTHONDONTWRITEBYTECODE=1
+          -e "TERM=''${TERM:-xterm-256color}"
+          -e "LANG=''${LANG:-C.UTF-8}"
+          # Alpine's /etc/profile resets PATH, so record the sandbox tool path in
+          # /etc/profile.d before handing over to the real entry point. Doing it here
+          # keeps login shells (including pi-sandbox-shell) consistent. It is
+          # best-effort: with the non-rootless fallback the container user cannot
+          # write /etc, and login shells then keep Alpine's default PATH.
+          --entrypoint /bin/sh
+          "$PI_SANDBOX_IMAGE"
+          -c 'mkdir -p /etc/profile.d 2>/dev/null
+    ( printf "export PATH=%s:\"\$PATH\"\n" "$PATH" > /etc/profile.d/10-pi-sandbox-path.sh ) 2>/dev/null
+    exec "$@"' pi-sandbox
+        )
+        args+=("''${entry[@]}")
+
+        exec "$PI_SANDBOX_DOCKER" "''${args[@]}"
+  '';
+
+  # Machine-readable policy check used by the resume extension. It validates the
+  # same flag combination the launcher would use and reports the resulting plan
+  # without creating scratch state or starting a container.
+  sandboxPreflight = pkgs.writeShellScriptBin "pi-sandbox-preflight" ''
     set -euo pipefail
     source ${sandboxLib}
 
-    PI_SANDBOX_EXEC="$0"
-    export PI_SANDBOX_EXEC
+    PI_SANDBOX_MODE="none"
+    PI_SANDBOX_NET="1"
+    PI_SANDBOX_EXTRA_MOUNTS=""
+    extra_mounts=()
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -cwd) PI_SANDBOX_MODE="rw" ;;
+        -cwdro) PI_SANDBOX_MODE="ro" ;;
+        -copy) PI_SANDBOX_MODE="copy" ;;
+        -local) PI_SANDBOX_NET="0" ;;
+        -extraro | --extraro | -extrarw | --extrarw)
+          path="''${2:-}"
+          [ -n "$path" ] || pi_sandbox_die "$1 requires a directory"
+          slot="ro"
+          case "$1" in -extrarw | --extrarw) slot="rw" ;; esac
+          extra_record="$(pi_sandbox_extra_record "$slot" "$path" "$1")" || exit 1
+          extra_mounts+=("$extra_record")
+          shift
+          ;;
+        *) pi_sandbox_die "unknown pi-sandbox-preflight argument: $1" ;;
+      esac
+      shift
+    done
 
-    if [ "''${PI_SANDBOX_PREPARED:-0}" != "1" ]; then
-      PI_SANDBOX_MODE="''${PI_SANDBOX_MODE:-none}"
-      PI_SANDBOX_NET="''${PI_SANDBOX_NET:-1}"
-      export PI_SANDBOX_MODE PI_SANDBOX_NET
-      pi_sandbox_prepare
-      trap pi_sandbox_cleanup EXIT
+    if [ "''${#extra_mounts[@]}" -gt 0 ]; then
+      PI_SANDBOX_EXTRA_MOUNTS="$(printf '%s\n' "''${extra_mounts[@]}")"
     fi
-    pi_sandbox_ensure_image
+    export PI_SANDBOX_MODE PI_SANDBOX_NET PI_SANDBOX_EXTRA_MOUNTS
 
-    entry=()
-    if [ "''${1:-sandboxd}" = "sandboxd" ]; then
-      entry=("$PI_SANDBOX_NODE" "$PI_SANDBOX_SANDBOXD")
-    else
-      [ "''${1:-}" = "--" ] && shift
-      entry=("$@")
-    fi
-    [ "''${#entry[@]}" -gt 0 ] || pi_sandbox_die "pi-sandbox-exec: no command given"
+    pi_sandbox_plan
 
-    args=(
-      run --rm --interactive --init
-      --name "pi-sandbox-$$"
-      --label pi-sandbox=1
-      --security-opt no-new-privileges
-      --pids-limit ${toString cfg.limits.pids}
-      --memory ${cfg.limits.memory}
-      --cpus ${toString cfg.limits.cpus}
-      --workdir "$PI_SANDBOX_WORKDIR"
-    )
-    if [ "''${PI_SANDBOX_NET:-1}" = "0" ]; then
-      args+=(--network none)
-    fi
-    if [ -n "$PI_SANDBOX_DOCKER_USER" ]; then
-      args+=(--user "$PI_SANDBOX_DOCKER_USER")
-    fi
-    if [ -t 0 ] && [ -t 1 ]; then
-      args+=(--tty)
-    fi
-    args+=(
-      -v "$PI_SANDBOX_SCRATCH:/tmp"
-      -v "$PI_SANDBOX_SCRATCH:$PI_SANDBOX_SCRATCH"
-      -v /nix/store:/nix/store:ro
-      -v /nix/var/nix/profiles:/nix/var/nix/profiles:ro
-      -v /run/current-system/sw/bin:/run/current-system/sw/bin:ro
-    )
-    if [ -n "$PI_SANDBOX_CWD" ]; then
-      if [ "$PI_SANDBOX_MODE" = "rw" ]; then
-        args+=(-v "$PI_SANDBOX_CWD:$PI_SANDBOX_CWD")
-      else
-        args+=(-v "$PI_SANDBOX_CWD:$PI_SANDBOX_CWD:ro")
-      fi
-    fi
-    while IFS= read -r mount_arg; do
-      [ -n "$mount_arg" ] && args+=("$mount_arg")
-    done < "$PI_SANDBOX_MOUNT_ARGS_FILE"
-    args+=(
-      -e HOME=/tmp/home
-      -e TMPDIR=/tmp
-      -e XDG_CACHE_HOME=/tmp/home/.cache
-      -e UV_CACHE_DIR=/tmp/home/.cache/uv
-      -e "PATH=$PI_SANDBOX_PATH"
-      -e "SANDBOX_SHELL=$PI_SANDBOX_BASH"
-      -e "SSL_CERT_FILE=${cacertBundle}"
-      -e "NIX_SSL_CERT_FILE=${cacertBundle}"
-      -e GIT_OPTIONAL_LOCKS=0
-      -e PYTHONDONTWRITEBYTECODE=1
-      -e "TERM=''${TERM:-xterm-256color}"
-      -e "LANG=''${LANG:-C.UTF-8}"
-      # Alpine's /etc/profile resets PATH, so record the sandbox tool path in
-      # /etc/profile.d before handing over to the real entry point. Doing it here
-      # keeps login shells (including pi-sandbox-shell) consistent. It is
-      # best-effort: with the non-rootless fallback the container user cannot
-      # write /etc, and login shells then keep Alpine's default PATH.
-      --entrypoint /bin/sh
-      "$PI_SANDBOX_IMAGE"
-      -c 'mkdir -p /etc/profile.d 2>/dev/null
-( printf "export PATH=%s:\"\$PATH\"\n" "$PATH" > /etc/profile.d/10-pi-sandbox-path.sh ) 2>/dev/null
-exec "$@"' pi-sandbox
-    )
-    args+=("''${entry[@]}")
+    printf 'mode:%s\n' "$PI_SANDBOX_MODE"
+    printf 'net:%s\n' "$PI_SANDBOX_NET"
+    printf 'cwd:%s\n' "$PI_SANDBOX_CWD"
+    printf 'workdir:%s\n' "$PI_SANDBOX_WORKDIR"
+    if pi_sandbox_detect_rootless; then printf 'rootless:1\n'; else printf 'rootless:0\n'; fi
 
-    exec "$PI_SANDBOX_DOCKER" "''${args[@]}"
+    declare -A seen_extras=()
+    for record in "''${PI_SANDBOX_EXTRAS[@]}"; do
+      [ -z "''${seen_extras[''${record#*:}]:-}" ] || continue
+      seen_extras["''${record#*:}"]=1
+      printf 'extra:%s\n' "$record"
+    done
+    for record in "''${PI_SANDBOX_MOUNT_ROOTS[@]}"; do
+      root="''${record#*:}"
+      pi_sandbox_is_broad "$root" || continue
+      printf 'broad:%s\n' "$root"
+      for entry in "''${PI_SANDBOX_MASK_PATHS[@]}"; do
+        abs="$HOME/$entry"
+        [ -e "$abs" ] || continue
+        case "$abs/" in
+          "$root"/*) printf 'mask:%s\n' "$abs" ;;
+        esac
+      done
+    done
   '';
 
   # Interactive shell with exactly the sandbox mounts, for debugging.
@@ -440,6 +603,7 @@ exec "$@"' pi-sandbox
     PI_SANDBOX_MODE="none"
     PI_SANDBOX_NET="1"
     PI_SANDBOX_ASSUME_YES=0
+    extra_mounts=()
     while [ "$#" -gt 0 ]; do
       case "$1" in
         -cwd) PI_SANDBOX_MODE="rw" ;;
@@ -447,12 +611,26 @@ exec "$@"' pi-sandbox
         -copy) PI_SANDBOX_MODE="copy" ;;
         -local) PI_SANDBOX_NET="0" ;;
         -yes) PI_SANDBOX_ASSUME_YES=1 ;;
+        -extraro | --extraro | -extrarw | --extrarw)
+          path="''${2:-}"
+          [ -n "$path" ] || pi_sandbox_die "$1 requires a directory"
+          slot="ro"
+          case "$1" in -extrarw | --extrarw) slot="rw" ;; esac
+          extra_record="$(pi_sandbox_extra_record "$slot" "$path" "$1")" || exit 1
+          extra_mounts+=("$extra_record")
+          shift
+          ;;
         *) break ;;
       esac
       shift
     done
+    PI_SANDBOX_EXTRA_MOUNTS=""
+    if [ "''${#extra_mounts[@]}" -gt 0 ]; then
+      PI_SANDBOX_EXTRA_MOUNTS="$(printf '%s\n' "''${extra_mounts[@]}")"
+    fi
     PI_SANDBOX_EXEC="${sandboxExec}/bin/pi-sandbox-exec"
     export PI_SANDBOX_MODE PI_SANDBOX_NET PI_SANDBOX_ASSUME_YES PI_SANDBOX_EXEC
+    export PI_SANDBOX_EXTRA_MOUNTS
 
     pi_sandbox_prepare
     trap pi_sandbox_cleanup EXIT
@@ -467,18 +645,48 @@ exec "$@"' pi-sandbox
     set -uo pipefail
     source ${sandboxLib}
 
+    usage() {
+      printf 'usage: pi-sandbox-doctor [none|ro|rw|copy] [-extraro DIR | -extrarw DIR]...\n' >&2
+      printf '       (PI_SANDBOX_DOCTOR_NET=0 for offline)\n' >&2
+      exit 2
+    }
+
     mode="''${1:-none}"
     case "$mode" in
       none | ro | rw | copy) ;;
-      *) printf 'usage: pi-sandbox-doctor [none|ro|rw|copy]  (PI_SANDBOX_DOCTOR_NET=0 for offline)\n' >&2; exit 2 ;;
+      *) usage ;;
     esac
+    shift
     net="''${PI_SANDBOX_DOCTOR_NET:-1}"
+
+    extra_mounts=()
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -extraro | --extraro | -extrarw | --extrarw)
+          path="''${2:-}"
+          [ -n "$path" ] || usage
+          slot="ro"
+          case "$1" in -extrarw | --extrarw) slot="rw" ;; esac
+          extra_record="$(pi_sandbox_extra_record "$slot" "$path" "$1")" || exit 1
+          extra_mounts+=("$extra_record")
+          shift
+          ;;
+        *) usage ;;
+      esac
+      shift
+    done
+
+    PI_SANDBOX_EXTRA_MOUNTS=""
+    if [ "''${#extra_mounts[@]}" -gt 0 ]; then
+      PI_SANDBOX_EXTRA_MOUNTS="$(printf '%s\n' "''${extra_mounts[@]}")"
+    fi
 
     PI_SANDBOX_MODE="$mode"
     PI_SANDBOX_NET="$net"
     PI_SANDBOX_ASSUME_YES=1
     PI_SANDBOX_EXEC="${sandboxExec}/bin/pi-sandbox-exec"
     export PI_SANDBOX_MODE PI_SANDBOX_NET PI_SANDBOX_ASSUME_YES PI_SANDBOX_EXEC
+    export PI_SANDBOX_EXTRA_MOUNTS
 
     pi_sandbox_prepare
     trap pi_sandbox_cleanup EXIT
@@ -514,11 +722,13 @@ exec "$@"' pi-sandbox
     for entry in "''${PI_SANDBOX_MASK_PATHS[@]}"; do
       abs="$HOME/$entry"
       [ -e "$abs" ] || continue
-      [ -n "$PI_SANDBOX_CWD" ] || continue
-      case "$abs/" in
-        "$PI_SANDBOX_CWD"/*) ;;
-        *) continue ;;
-      esac
+      inside=0
+      for record in ''${PI_SANDBOX_MOUNT_ROOTS[@]+"''${PI_SANDBOX_MOUNT_ROOTS[@]}"}; do
+        case "$abs/" in
+          "''${record#*:}"/*) inside=1 ;;
+        esac
+      done
+      [ "$inside" = "1" ] || continue
       masked=1
       if [ -d "$abs" ]; then
         probe "$entry is masked" "test -z \"\$(ls -A '$abs' 2>/dev/null)\""
@@ -547,6 +757,22 @@ exec "$@"' pi-sandbox
     esac
     probe "scratch is writable" "touch /tmp/.pi-sandbox-probe"
     probe "scratch is private" "test \"\$(stat -c %a /tmp)\" = 700"
+
+    printf '\nextras\n'
+    if [ "''${#PI_SANDBOX_EXTRAS[@]}" -eq 0 ]; then
+      printf '  SKIP  no extra mounts\n'
+    else
+      for record in "''${PI_SANDBOX_EXTRAS[@]}"; do
+        extra_mode="''${record%%:*}"
+        extra_path="''${record#*:}"
+        if [ "$extra_mode" = "rw" ]; then
+          probe "$extra_path is writable" "touch '$extra_path/.pi-sandbox-probe' && rm -f '$extra_path/.pi-sandbox-probe'"
+        else
+          probe "$extra_path is readable" "test -r '$extra_path'"
+          probe "$extra_path is read-only" "! touch '$extra_path/.pi-sandbox-probe'"
+        fi
+      done
+    fi
 
     printf '\nnetwork\n'
     if [ "$net" = "1" ]; then
@@ -602,13 +828,29 @@ exec "$@"' pi-sandbox
     PI_SANDBOX_ASSUME_YES=0
     explicit_mode=0
     explicit_local=0
+    resume_requested=0
     insecure=0
     passthrough=()
+    extra_mounts=()
     while [ "$#" -gt 0 ]; do
       case "$1" in
+        -c | --continue | -r | --resume | --session | --session-id | --fork | \
+          --session=* | --session-id=* | --fork=*)
+          resume_requested=1
+          passthrough+=("$1")
+          ;;
         -cwd | --cwd) PI_SANDBOX_MODE="rw"; explicit_mode=1 ;;
         -cwdro | --cwdro) PI_SANDBOX_MODE="ro"; explicit_mode=1 ;;
         -copy | --copy) PI_SANDBOX_MODE="copy"; explicit_mode=1 ;;
+        -extraro | --extraro | -extrarw | --extrarw)
+          path="''${2:-}"
+          [ -n "$path" ] || pi_sandbox_die "$1 requires a directory"
+          slot="ro"
+          case "$1" in -extrarw | --extrarw) slot="rw" ;; esac
+          extra_record="$(pi_sandbox_extra_record "$slot" "$path" "$1")" || exit 1
+          extra_mounts+=("$extra_record")
+          shift
+          ;;
         -local | --local) PI_SANDBOX_NET="0"; explicit_local=1 ;;
         -insecure | --insecure) insecure=1 ;;
         -yes | --yes) PI_SANDBOX_ASSUME_YES=1 ;;
@@ -624,13 +866,18 @@ exec "$@"' pi-sandbox
     done
 
     if [ "$insecure" = "1" ]; then
-      if [ "$explicit_mode" = "1" ] || [ "$explicit_local" = "1" ]; then
-        pi_sandbox_die "-insecure cannot be combined with -cwd, -cwdro, -copy or -local"
+      if [ "$explicit_mode" = "1" ] || [ "$explicit_local" = "1" ] || [ "''${#extra_mounts[@]}" -gt 0 ]; then
+        pi_sandbox_die "-insecure cannot be combined with -cwd, -cwdro, -copy, -extraro, -extrarw or -local"
       fi
       exec "$pi_bin" "''${passthrough[@]}"
     fi
 
-    export PI_SANDBOX_MODE PI_SANDBOX_NET PI_SANDBOX_ASSUME_YES
+    PI_SANDBOX_EXTRA_MOUNTS=""
+    if [ "''${#extra_mounts[@]}" -gt 0 ]; then
+      PI_SANDBOX_EXTRA_MOUNTS="$(printf '%s\n' "''${extra_mounts[@]}")"
+    fi
+
+    export PI_SANDBOX_MODE PI_SANDBOX_NET PI_SANDBOX_ASSUME_YES PI_SANDBOX_EXTRA_MOUNTS
     export PI_SANDBOX_STRICT="${if cfg.strictTools then "1" else "0"}"
     export PI_SANDBOX_EXEC="${sandboxExec}/bin/pi-sandbox-exec"
 
@@ -642,15 +889,34 @@ exec "$@"' pi-sandbox
     if [ "$PI_SANDBOX_NET" = "0" ]; then PI_WEB=0; fi
     export PI_WEB
 
+    # Resuming without an explicit sandbox choice: the session is not known
+    # until Pi's picker runs, so defer preparing mounts until the sandbox
+    # extension has selected/validated them. The extension starts the runner,
+    # which performs pi_sandbox_prepare itself.
+    if [ "$resume_requested" = "1" ] \
+      && [ "$explicit_mode" = "0" ] \
+      && [ "$explicit_local" = "0" ] \
+      && [ "''${#extra_mounts[@]}" -eq 0 ]; then
+      export PI_SANDBOX_DEFERRED=1
+      export PI_SANDBOX_DEFAULT_MODE="${cfg.defaultMode}"
+      export PI_SANDBOX_PREFLIGHT="${sandboxPreflight}/bin/pi-sandbox-preflight"
+      export PI_SANDBOX_CMD="$PI_SANDBOX_EXEC"
+      pi_sandbox_log "resume: sandbox selection deferred until the session is known"
+      exec "$pi_bin" -e ${extension} -nbt "''${passthrough[@]}"
+    fi
+
     pi_sandbox_prepare
     pi_sandbox_ensure_image
     trap pi_sandbox_cleanup EXIT
 
+    mount_log="mode=$PI_SANDBOX_MODE net=$PI_SANDBOX_NET"
     if [ -n "$PI_SANDBOX_CWD" ]; then
-      pi_sandbox_log "mode=$PI_SANDBOX_MODE net=$PI_SANDBOX_NET cwd=$PI_SANDBOX_CWD scratch=$PI_SANDBOX_SCRATCH"
-    else
-      pi_sandbox_log "mode=$PI_SANDBOX_MODE net=$PI_SANDBOX_NET scratch=$PI_SANDBOX_SCRATCH"
+      mount_log="$mount_log cwd=$PI_SANDBOX_CWD"
     fi
+    if [ "''${#PI_SANDBOX_EXTRAS[@]}" -gt 0 ]; then
+      mount_log="$mount_log extras=''${#PI_SANDBOX_EXTRAS[@]}"
+    fi
+    pi_sandbox_log "$mount_log scratch=$PI_SANDBOX_SCRATCH"
 
     "$pi_bin" -e ${extension} -nbt "''${passthrough[@]}"
   '';
@@ -736,7 +1002,8 @@ in
       type = lib.types.listOf lib.types.str;
       default = maskPaths;
       description = ''
-        Home-relative paths hidden from any mounted directory. Directories are
+        Home-relative paths hidden from any mounted directory (the working
+        directory and every `-extraro`/`-extrarw` mount). Directories are
         replaced with an empty tmpfs and files with an empty read-only file, so a
         broad mount such as the home directory cannot expose credentials or
         host-persistence vectors.
@@ -765,6 +1032,7 @@ in
     home.packages = [
       sandboxShell
       sandboxDoctor
+      sandboxPreflight
     ];
 
     home.file.".local/share/pi-sandbox/README.md".source = ./README.md;
