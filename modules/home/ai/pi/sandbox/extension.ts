@@ -2,9 +2,9 @@
  * Pi sandbox extension.
  *
  * Runs in the trusted Pi process (which keeps `~/.pi/agent/auth.json`, provider
- * credentials and session files) and routes every built-in tool into a Docker
- * container that holds only the mounted working directory, an ephemeral scratch
- * directory and a read-only view of `/nix/store`.
+ * credentials and session files) and routes Pi's file and shell tools into a
+ * Docker container that holds only the mounted working directory, an ephemeral
+ * scratch directory and a read-only view of `/nix/store`.
  *
  * All sandbox policy lives in Nix (`modules/home/ai/pi/sandbox/default.nix`);
  * this file only speaks the newline-delimited JSON protocol to `sandboxd` and
@@ -18,28 +18,17 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
-  DEFAULT_MAX_BYTES,
   createBashToolDefinition,
   createEditToolDefinition,
-  createFindToolDefinition,
-  createGrepToolDefinition,
-  createLsToolDefinition,
   createReadToolDefinition,
   createWriteToolDefinition,
-  formatSize,
-  truncateHead,
-  truncateLine,
   type BashOperations,
   type EditOperations,
-  type FindOperations,
-  type GrepOperations,
-  type LsOperations,
   type ReadOperations,
   type WriteOperations,
 } from "@earendil-works/pi-coding-agent";
 
-const SANDBOX_TOOLS = ["read", "write", "edit", "ls", "find", "grep", "bash"];
-const GREP_DEFAULT_LIMIT = 100;
+const SANDBOX_TOOLS = ["read", "write", "edit", "bash"];
 const START_TIMEOUT_MS = 60_000;
 const STOP_TIMEOUT_MS = 5000;
 /** A streaming exec must be acknowledged quickly; only the command itself runs long. */
@@ -93,14 +82,6 @@ interface PreflightResult {
   masks: string[];
 }
 
-interface StatInfo {
-  isDirectory: boolean;
-  isFile: boolean;
-  isSymbolicLink: boolean;
-  size: number;
-  mode: number;
-  mtimeMs: number;
-}
 
 interface ExecResult {
   exitCode: number | null;
@@ -290,11 +271,6 @@ function resolvePath(input: string, cwd: string): string {
   if (trimmed === "~") return SANDBOX_HOME;
   if (trimmed.startsWith("~/")) return path.join(SANDBOX_HOME, trimmed.slice(2));
   return path.resolve(cwd, trimmed);
-}
-
-function isMissing(error: unknown): boolean {
-  const code = (error as SandboxFailure | undefined)?.code;
-  return code === "ENOENT" || code === "ENOTDIR";
 }
 
 function isUnavailable(error: unknown): boolean {
@@ -594,33 +570,6 @@ class SandboxClient {
     await this.request({ op: "access", path: filePath, write });
   }
 
-  async stat(target: string): Promise<StatInfo> {
-    const response = await this.request({ op: "stat", path: target });
-    return {
-      isDirectory: response.isDirectory === true,
-      isFile: response.isFile === true,
-      isSymbolicLink: response.isSymbolicLink === true,
-      size: Number(response.size ?? 0),
-      mode: Number(response.mode ?? 0),
-      mtimeMs: Number(response.mtimeMs ?? 0),
-    };
-  }
-
-  async readdir(target: string): Promise<string[]> {
-    const response = await this.request({ op: "readdir", path: target });
-    return Array.isArray(response.entries) ? (response.entries as string[]) : [];
-  }
-
-  async exists(target: string): Promise<boolean> {
-    try {
-      await this.stat(target);
-      return true;
-    } catch (error) {
-      if (isMissing(error)) return false;
-      throw error;
-    }
-  }
-
   async kill(runId: number): Promise<void> {
     // `send` rejects when the container is already gone; killing is best effort.
     try {
@@ -742,38 +691,6 @@ class SandboxClient {
     return { exitCode: result.exitCode };
   }
 
-  /** Run a command and capture both streams; used for sandboxed `rg`/`fd`. */
-  async capture(
-    command: string,
-    options: {
-      cwd?: string;
-      signal?: AbortSignal;
-      onRunId?: (runId: number) => void;
-      onStdout?: (data: Buffer) => void;
-    } = {},
-  ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    const result = await this.execStreaming(command, options.cwd ?? this.config.workdir, {
-      signal: options.signal,
-      onRunId: options.onRunId,
-      onStdout: (data) => {
-        options.onStdout?.(data);
-        stdout.push(data);
-      },
-      onStderr: (data) => stderr.push(data),
-    });
-    return {
-      stdout: Buffer.concat(stdout).toString("utf8"),
-      stderr: Buffer.concat(stderr).toString("utf8"),
-      exitCode: result.exitCode,
-    };
-  }
-}
-
-/** Minimal single-quote shell escaping for values interpolated into commands. */
-function quote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 export default function sandboxExtension(pi: ExtensionAPI): void {
@@ -1064,272 +981,12 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
     writeFile: writeOperations.writeFile,
   };
 
-  const lsOperations: LsOperations = {
-    exists: async (filePath) => {
-      await ensureSandbox();
-      return client.exists(filePath);
-    },
-    stat: async (filePath) => {
-      await ensureSandbox();
-      const info = await client.stat(filePath);
-      return { isDirectory: () => info.isDirectory };
-    },
-    readdir: async (dir) => {
-      await ensureSandbox();
-      return client.readdir(dir);
-    },
-  };
-
-  const grepOperations: GrepOperations = {
-    isDirectory: async (filePath) => {
-      await ensureSandbox();
-      return (await client.stat(filePath)).isDirectory;
-    },
-    readFile: async (filePath) => {
-      await ensureSandbox();
-      return (await client.read(filePath)).toString("utf8");
-    },
-  };
-
-  /**
-   * `find` uses custom `glob` operations when they are provided, so the search
-   * runs inside the sandbox instead of Pi shelling out to a host `fd`.
-   */
-  const findOperations: FindOperations = {
-    exists: async (filePath) => {
-      await ensureSandbox();
-      return client.exists(filePath);
-    },
-    glob: async (pattern, searchPath, options) => {
-      await ensureSandbox();
-      let insideGitRepo = false;
-      for (let current = searchPath; ; ) {
-        if (await client.exists(path.join(current, ".git"))) {
-          insideGitRepo = true;
-          break;
-        }
-        const parent = path.dirname(current);
-        if (parent === current) break;
-        current = parent;
-      }
-      const args = ["--glob", "--color=never", "--hidden"];
-      if (!insideGitRepo) args.push("--no-require-git");
-      args.push("--max-results", String(options.limit));
-      let effectivePattern = pattern;
-      if (pattern.includes("/")) {
-        args.push("--full-path");
-        if (!pattern.startsWith("/") && !pattern.startsWith("**/") && pattern !== "**") {
-          effectivePattern = `**/${pattern}`;
-        }
-      }
-      args.push("--", effectivePattern, searchPath);
-      const result = await client.capture(`fd ${args.map(quote).join(" ")}`, { cwd: searchPath });
-      return result.stdout
-        .split("\n")
-        .map((line) => line.replace(/\r$/, "").trim())
-        .filter((line) => line.length > 0);
-    },
-  };
-
   const bashOperations: BashOperations = {
     exec: async (command, cwd, options) => {
       await ensureSandbox();
       return client.exec(command, toSandboxCwd(cwd), options);
     },
   };
-
-  /**
-   * `grep` is reimplemented instead of delegated: Pi's built-in grep always
-   * spawns a host `rg`, which would search the host filesystem from the trusted
-   * process. This mirrors `dist/core/tools/grep.js` (same arguments, same output
-   * shape and truncation notices) but runs `rg` inside the sandbox. If Pi's
-   * formatting changes upstream, this needs to follow.
-   */
-  async function runSandboxedGrep(
-    params: {
-      pattern: string;
-      path?: string;
-      glob?: string;
-      ignoreCase?: boolean;
-      literal?: boolean;
-      context?: number;
-      limit?: number;
-    },
-    signal: AbortSignal | undefined,
-    ctx: ExtensionContext | undefined,
-  ) {
-    await ensureSandbox();
-    const searchPath = resolvePath(params.path ?? ".", ctx?.cwd ?? sandboxCwd);
-    let isDirectory: boolean;
-    try {
-      isDirectory = (await client.stat(searchPath)).isDirectory;
-    } catch (error) {
-      // Only a missing path is "not found"; sandbox failures must surface as-is,
-      // otherwise they look like ordinary tool errors and hide a broken sandbox.
-      if (isMissing(error)) throw new Error(`Path not found: ${searchPath}`);
-      throw error;
-    }
-
-    // `rg` takes a file or a directory, but its cwd must be a directory. Using the
-    // file as cwd makes `spawn` fail, which used to leave the call waiting for an
-    // exit event that never came.
-    const runCwd = isDirectory ? searchPath : path.dirname(searchPath);
-
-    const contextLines = params.context && params.context > 0 ? params.context : 0;
-    const effectiveLimit = Math.max(1, params.limit ?? GREP_DEFAULT_LIMIT);
-    const formatPath = (filePath: string): string => {
-      if (isDirectory) {
-        const relative = path.relative(searchPath, filePath);
-        if (relative && !relative.startsWith("..")) return relative.replace(/\\/g, "/");
-      }
-      return path.basename(filePath);
-    };
-
-    const args = ["--json", "--line-number", "--color=never", "--hidden"];
-    if (params.ignoreCase) args.push("--ignore-case");
-    if (params.literal) args.push("--fixed-strings");
-    if (params.glob) args.push("--glob", params.glob);
-    args.push("--", params.pattern, searchPath);
-
-    const matches: Array<{ filePath: string; lineNumber: number; lineText?: string }> = [];
-    let matchCount = 0;
-    let matchLimitReached = false;
-    let linesTruncated = false;
-    let streamBuffer = "";
-    let currentRunId: number | undefined;
-    let killedByLimit = false;
-
-    const stopOnLimit = (): void => {
-      if (currentRunId !== undefined) void client.kill(currentRunId);
-    };
-
-    const consumeLine = (line: string): void => {
-      if (!line.trim() || matchCount >= effectiveLimit) return;
-      let event: {
-        type?: string;
-        data?: { path?: { text?: string }; line_number?: number; lines?: { text?: string } };
-      };
-      try {
-        event = JSON.parse(line) as typeof event;
-      } catch {
-        return;
-      }
-      if (event.type !== "match") return;
-      matchCount += 1;
-      const filePath = event.data?.path?.text;
-      const lineNumber = event.data?.line_number;
-      if (filePath && typeof lineNumber === "number") {
-        matches.push({ filePath, lineNumber, lineText: event.data?.lines?.text });
-      }
-      if (matchCount >= effectiveLimit) {
-        matchLimitReached = true;
-        killedByLimit = true;
-        stopOnLimit();
-      }
-    };
-
-    const result = await client.execStreaming(
-      `rg ${args.map(quote).join(" ")}`,
-      runCwd,
-      {
-        signal,
-        onRunId: (runId) => {
-          currentRunId = runId;
-          // The limit can be reached before the ack arrives (rg streams output
-          // immediately), so re-check here instead of letting rg scan on.
-          if (matchLimitReached) stopOnLimit();
-        },
-        onStdout: (data) => {
-          streamBuffer += data.toString("utf8");
-          let index = streamBuffer.indexOf("\n");
-          while (index !== -1) {
-            const line = streamBuffer.slice(0, index);
-            streamBuffer = streamBuffer.slice(index + 1);
-            index = streamBuffer.indexOf("\n");
-            consumeLine(line);
-          }
-        },
-      },
-    );
-
-    if (signal?.aborted) throw new Error("aborted");
-    if (!killedByLimit && result.exitCode !== null && result.exitCode !== 0 && result.exitCode !== 1) {
-      throw new Error(`ripgrep exited with code ${result.exitCode}`);
-    }
-    if (matchCount === 0) {
-      return { content: [{ type: "text" as const, text: "No matches found" }], details: undefined };
-    }
-
-    const outputLines: string[] = [];
-    const fileCache = new Map<string, string[]>();
-    const fileLines = async (filePath: string): Promise<string[]> => {
-      const cached = fileCache.get(filePath);
-      if (cached) return cached;
-      let lines: string[] = [];
-      try {
-        const content = await client.read(filePath);
-        lines = content.toString("utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-      } catch {
-        lines = [];
-      }
-      fileCache.set(filePath, lines);
-      return lines;
-    };
-
-    for (const match of matches) {
-      const relativePath = formatPath(match.filePath);
-      if (contextLines === 0 && match.lineText !== undefined) {
-        const sanitized = match.lineText
-          .replace(/\r\n/g, "\n")
-          .replace(/\r/g, "")
-          .replace(/\n$/, "");
-        const { text, wasTruncated } = truncateLine(sanitized);
-        if (wasTruncated) linesTruncated = true;
-        outputLines.push(`${relativePath}:${match.lineNumber}: ${text}`);
-        continue;
-      }
-      const lines = await fileLines(match.filePath);
-      if (lines.length === 0) {
-        outputLines.push(`${relativePath}:${match.lineNumber}: (unable to read file)`);
-        continue;
-      }
-      const start = contextLines > 0 ? Math.max(1, match.lineNumber - contextLines) : match.lineNumber;
-      const end =
-        contextLines > 0 ? Math.min(lines.length, match.lineNumber + contextLines) : match.lineNumber;
-      for (let current = start; current <= end; current++) {
-        const sanitized = (lines[current - 1] ?? "").replace(/\r/g, "");
-        const { text, wasTruncated } = truncateLine(sanitized);
-        if (wasTruncated) linesTruncated = true;
-        const separator = current === match.lineNumber ? ":" : "-";
-        outputLines.push(`${relativePath}${separator}${current}${separator} ${text}`);
-      }
-    }
-
-    const truncation = truncateHead(outputLines.join("\n"), { maxLines: Number.MAX_SAFE_INTEGER });
-    let output = truncation.content;
-    const details: Record<string, unknown> = {};
-    const notices: string[] = [];
-    if (matchLimitReached) {
-      notices.push(
-        `${effectiveLimit} matches limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
-      );
-      details.matchLimitReached = effectiveLimit;
-    }
-    if (truncation.truncated) {
-      notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
-      details.truncation = truncation;
-    }
-    if (linesTruncated) {
-      notices.push("Some lines truncated to 500 chars. Use read tool to see full lines");
-      details.linesTruncated = true;
-    }
-    if (notices.length > 0) output += `\n\n[${notices.join(". ")}]`;
-
-    return {
-      content: [{ type: "text" as const, text: output }],
-      details: Object.keys(details).length > 0 ? details : undefined,
-    };
-  }
 
   // ---------------------------------------------------------------------------
   // Tool registration
@@ -1389,64 +1046,12 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
     },
   });
 
-  const lsTool = createLsToolDefinition(sandboxCwd, { operations: lsOperations });
-  pi.registerTool({
-    ...lsTool,
-    execute: async (id, params, signal, onUpdate, ctx) => {
-      try {
-        return await lsTool.execute(
-          id,
-          { ...params, path: rewritePath(params.path, ".") ?? params.path },
-          signal,
-          onUpdate,
-          ctx,
-        );
-      } catch (error) {
-        return toolError(error);
-      }
-    },
-  });
-
-  const findTool = createFindToolDefinition(sandboxCwd, { operations: findOperations });
-  pi.registerTool({
-    ...findTool,
-    execute: async (id, params, signal, onUpdate, ctx) => {
-      try {
-        return await findTool.execute(
-          id,
-          { ...params, path: rewritePath(params.path, ".") ?? params.path },
-          signal,
-          onUpdate,
-          ctx,
-        );
-      } catch (error) {
-        return toolError(error);
-      }
-    },
-  });
-
   const bashTool = createBashToolDefinition(sandboxCwd, { operations: bashOperations });
   pi.registerTool({
     ...bashTool,
     execute: async (id, params, signal, onUpdate, ctx) => {
       try {
         return await bashTool.execute(id, params, signal, onUpdate, ctx);
-      } catch (error) {
-        return toolError(error);
-      }
-    },
-  });
-
-  const grepTool = createGrepToolDefinition(sandboxCwd, { operations: grepOperations });
-  pi.registerTool({
-    ...grepTool,
-    execute: async (_id, params, signal, _onUpdate, ctx) => {
-      try {
-        return await runSandboxedGrep(
-          { ...params, path: rewritePath(params.path, ".") ?? params.path },
-          signal,
-          ctx,
-        );
       } catch (error) {
         return toolError(error);
       }

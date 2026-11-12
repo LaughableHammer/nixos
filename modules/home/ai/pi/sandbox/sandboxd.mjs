@@ -157,18 +157,6 @@ async function readFileBase64(filePath) {
   return buffer.toString("base64");
 }
 
-async function statInfo(target) {
-  const stat = await fsp.stat(target);
-  return {
-    isDirectory: stat.isDirectory(),
-    isFile: stat.isFile(),
-    isSymbolicLink: stat.isSymbolicLink(),
-    size: stat.size,
-    mode: stat.mode,
-    mtimeMs: stat.mtimeMs,
-  };
-}
-
 function startExec(id, request) {
   const runId = nextRunId++;
   const cwd = typeof request.cwd === "string" && request.cwd ? request.cwd : process.env.HOME || "/tmp";
@@ -245,31 +233,6 @@ async function handle(request) {
       reply(id, {});
       return;
     }
-
-    case "stat":
-      reply(id, await statInfo(String(request.path)));
-      return;
-
-    case "lstat": {
-      const stat = await fsp.lstat(String(request.path));
-      reply(id, {
-        isDirectory: stat.isDirectory(),
-        isFile: stat.isFile(),
-        isSymbolicLink: stat.isSymbolicLink(),
-        size: stat.size,
-        mode: stat.mode,
-        mtimeMs: stat.mtimeMs,
-      });
-      return;
-    }
-
-    case "readdir":
-      reply(id, { entries: await fsp.readdir(String(request.path)) });
-      return;
-
-    case "realpath":
-      reply(id, { path: await fsp.realpath(String(request.path)) });
-      return;
 
     case "exec":
       startExec(id, request);

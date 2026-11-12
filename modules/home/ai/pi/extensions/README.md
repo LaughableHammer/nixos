@@ -29,9 +29,9 @@ a read-only `/plan` workflow (start, clarify, review, then implement in the same
 or a fresh session) and its settings live in `~/.pi/agent/pi-plan-mode.json`.
 
 The package's default tool policy targets Pi's built-in tool names. Under the
-sandbox, `read`/`write`/`edit`/`ls`/`find`/`grep`/`bash` are provided by
-`../sandbox/extension.ts` under those same names, so the policy applies as
-intended; mutating sandbox tools stay blocked while planning.
+sandbox, `read`/`write`/`edit`/`bash` are provided by `../sandbox/extension.ts`
+under those same names, so the policy applies as intended; mutating sandbox
+tools stay blocked while planning.
 
 Use `/plan settings` to choose the tool allowlist and other options.
 

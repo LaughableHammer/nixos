@@ -1,10 +1,13 @@
 # Pi sandbox
 
-Pi's built-in tools (`read`, `write`, `edit`, `ls`, `find`, `grep`, `bash`) run
-inside a Docker container. Pi itself — the harness that holds
-`~/.pi/agent/auth.json`, talks to OpenRouter, writes session files and runs
-extensions — stays on the host, so no tool call can read or exfiltrate provider
-credentials.
+Pi's file and shell tools (`read`, `write`, `edit`, `bash`) run inside a Docker
+container. Pi itself — the harness that holds `~/.pi/agent/auth.json`, talks to
+OpenRouter, writes session files and runs extensions — stays on the host, so no
+tool call can read or exfiltrate provider credentials.
+
+Those four are the only tools in a sandboxed session: the extension registers
+them and nothing else, so listing and searching are done from `bash` (`ls`,
+`rg` and `fd` are installed, and `apk` can add more).
 
 ```
 pi (host, trusted)                     container (untrusted)
