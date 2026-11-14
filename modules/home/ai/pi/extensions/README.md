@@ -4,6 +4,8 @@
 
 1. Add `<name>.ts` to this directory, default-exporting a function of the form
    `(pi: ExtensionAPI) => void` (see `notifications.ts` for the API in use).
+   A multi-file extension goes in `<name>/index.ts` with plain relative imports
+   for its siblings; Pi loads only the entry point (see `openrouter/`).
 2. No Nix change is needed: `modules/home/ai/pi/default.nix` exposes this
    directory recursively as `~/.pi/agent/extensions`, which Pi auto-discovers.
 3. Rebuild, then restart Pi or run `/reload`:
@@ -34,6 +36,58 @@ under those same names, so the policy applies as intended; mutating sandbox
 tools stay blocked while planning.
 
 Use `/plan settings` to choose the tool allowlist and other options.
+
+## OpenRouter routing
+
+`openrouter/` is a multi-file extension (`index.ts` entry point plus
+`endpoints.ts`, `pins.ts`, `picker.ts` and `suggest.ts`). It pins every
+OpenRouter request to a single ZDR endpoint; there is no automatic routing.
+
+- `/or-model` lists the current model's ZDR, tool-capable endpoints with
+  provider, quantization, context, p50 throughput and estimated cost. Rows are
+  cheapest first; quantization defaults to >= 8-bit and `tab` shows the rest.
+- The picked endpoint is stored per model in
+  `~/.pi/agent/sessions/openrouter-pins.json`, so pins survive restarts and are
+  shared by every Pi process. The footer shows `or: <provider> <quant>`.
+- Every request carries `provider: { only: [tag], allow_fallbacks: false }`,
+  and an unpinned model raises an error that says to run `/or-model`. Only the
+  `openai-completions` transport honours that field, so models on other
+  transports are not pinned and not routed here.
+
+### Faster, cheaper endpoint suggestion
+
+On the first user message of a Pi session that runs on an OpenRouter model, the
+extension compares the pinned endpoint against the model's other ZDR,
+tool-capable, >= 8-bit endpoints, using the same estimated cost as the picker
+(100k-token agentic session with prompt caching) and p50 throughput. No other
+model is ever suggested.
+
+Any endpoint that is both faster and cheaper than the pinned one qualifies (a
+1% gain is enough); the best tokens-per-second-per-dollar candidate wins, and
+the top three are probed in turn. Endpoints that advertise a smaller context
+window or output limit than the model's configured `contextWindow`/`maxTokens`
+are skipped: OpenRouter's own router would avoid them, but a forced
+`provider.only` pin does not, and the upstream then rejects the real request.
+
+A candidate is offered only after it has been verified with a minimal live
+completion (`max_tokens: 16`, a system message and one tool declaration, pinned
+to its tag with `allow_fallbacks: false`), so a dead or misrouted provider is
+never recommended. The dialog opens after the message is submitted and before it
+is sent, and offers yes/no.
+
+Accepting re-pins the model to the verified endpoint, exactly like `/or-model`
+(including the save to `openrouter-pins.json`); declining (or Esc) keeps the
+current pin and sends the message on it. The decision is not persisted, so the
+next Pi session offers again. The check is silent when there is nothing better
+or when the lookup fails, and a probe costs a few tokens.
+
+A probe cannot prove that the provider accepts pi's full payload. If the first
+response after an accepted suggestion fails (4xx, excluding 429), the extension
+restores the previous pin and reports the status in an error notification, so
+the next message is not stranded on the broken endpoint. A `429` keeps the pin
+and lets Pi retry.
+
+`PI_OR_SUGGEST=0 pi` disables the whole check.
 
 ## OpenRouter balance
 
