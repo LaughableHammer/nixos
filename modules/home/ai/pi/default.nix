@@ -132,6 +132,11 @@ in
     recursive = true;
   };
 
+  home.file.".pi/agent/skills" = {
+    source = ./skills;
+    recursive = true;
+  };
+
   home.file.".pi/agent/prompts" = {
     source = ./prompts;
     recursive = true;

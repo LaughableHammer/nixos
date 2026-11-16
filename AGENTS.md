@@ -44,6 +44,7 @@ Some inputs are pinned to specific revisions in `flake.nix`. Do not blindly `nix
 ## Pi extensions
 
 - `modules/home/ai/pi/extensions/` is exposed recursively as `~/.pi/agent/extensions` and auto-discovered by Pi: adding `<name>.ts` there needs no Nix change, and `<name>/index.ts` works the same way for a multi-file extension (only the entry point is loaded; sibling modules are plain imports). The files are store symlinks, so rebuild (`sudo nixos-rebuild switch --flake .`) before restart/`/reload`, and document the extension in `extensions/README.md`.
+- `modules/home/ai/pi/skills/` is exposed the same way as `~/.pi/agent/skills`: each `<name>/SKILL.md` is discovered recursively and loads on demand (or via `/skill:<name>`). Also needs a rebuild, since the files are store symlinks.
 - Extensions run trusted in the host Pi process, outside the sandbox, with full filesystem and network access; the sandbox only covers Pi's built-in tools.
 - `modules/home/ai/pi/sandbox/extension.ts` is the exception: the launcher force-loads it with `-e` and disables built-in tools with `-nbt`. A second sandbox-coupled extension needs a `writeText` binding, `my.piSandbox.extension` widened from a single path, and an extra `-e` argument in the launcher.
 

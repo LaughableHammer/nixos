@@ -22,6 +22,42 @@ full filesystem and network access and may spawn host commands (as
 `../sandbox/extension.ts` mediates sandboxed tool calls; see
 `../sandbox/README.md`.
 
+## Learning tools
+
+Vendored from [amosblomqvist/learn](https://github.com/amosblomqvist/learn) and
+edited only where this config differs: imports were retargeted to
+`@earendil-works/pi-coding-agent`, `@earendil-works/pi-tui` and `typebox`. The
+`agents/`, `extensions/visual-tools/` and `skills/visualize/` pieces were left
+out, because they need `pi-interactive-subagents` (tmux) to spawn the researcher
+and diagram makers.
+
+- `quiz.ts` — a graded multiple-choice/multi-select popup (`quiz` tool):
+  required correct answer and explanation, instant ✓/✗ feedback, an “I don't
+  know” choice, and an optional note field (Tab) that is passed back to the
+  agent only when non-empty.
+- `ask-user-question.ts` — an ungraded question popup (`ask_user_question`
+  tool) with free-text or single-select answers.
+- `md-log.ts` — mirrors the session into a Markdown file. `/md-log <file>` links
+  a note (created if missing), `/md-unlog` stops; the link is stored as a
+  `md-log` session entry, so it survives resume. Quiz and question turns are
+  written as callouts.
+
+`quiz` and `ask_user_question` serialize their popups through a shared
+`globalThis` UI mutex (Pi only allows one `ui.custom` at a time). If another
+`ask-user-question` implementation is ever added, replace it with this one
+rather than keeping both: separate implementations take separate locks and
+their popups can collide.
+
+These extensions run host-side, like all extensions: `md-log` writes the linked
+note directly with `node:fs`, so sandbox mount/mask policy does not apply to
+the log file.
+
+The teaching behaviour itself is the [`teach` skill](../skills/teach/SKILL.md),
+exposed as `~/.pi/agent/skills`; see that file for its one local change (the
+`researcher` subagent calls became `web_search`). It is available as
+`/skill:teach` and otherwise loads when a teaching task matches its
+`description`.
+
 ## `/plan`
 
 Plan mode comes from the [`@narumitw/pi-plan-mode`](https://pi.dev/packages/@narumitw/pi-plan-mode)
