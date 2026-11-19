@@ -56,6 +56,7 @@ let
     procps
     file
     openssh
+    poppler-utils
   ];
 
   sandboxBinPath = lib.makeBinPath sandboxTools;
@@ -787,6 +788,7 @@ let
     probe "ripgrep available" "rg --version"
     probe "fd available" "fd --version"
     probe "git available" "git --version"
+    probe "poppler tools available" "command -v pdftotext pdfinfo pdftoppm"
     probe "python3 available" "python3 -c 'import threading'"
     probe "uv available" "uv --version"
     probe "node available" "node -e 'require(\"worker_threads\")'"

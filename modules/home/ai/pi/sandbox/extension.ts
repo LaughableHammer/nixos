@@ -1170,6 +1170,9 @@ export default function sandboxExtension(pi: ExtensionAPI): void {
       guidelines.push(
         "Nix builds are unavailable in the sandbox: ask the user to run `nix build` on the host.",
       );
+      guidelines.push(
+        "Poppler tools are installed (`pdfinfo`, `pdftotext`, `pdftoppm`), so PDFs can be read without a new parser.",
+      );
     }
     if (!resolved.network) {
       guidelines.push("You are in a sandbox with no network access.");
