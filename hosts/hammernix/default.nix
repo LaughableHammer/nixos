@@ -15,11 +15,19 @@
   boot.loader.systemd-boot.enable = false;
   boot.loader.limine = {
     enable = true;
-    efiInstallAsRemovable = true;
+    # Let the installer create/maintain the "Limine" NVRAM entry for the ESP that
+    # holds /boot. The removable fallback (\EFI\BOOT\BOOTX64.EFI) is ambiguous
+    # once both disks have an ESP, so it must not be what selects the disk.
+    efiInstallAsRemovable = false;
     enrollConfig = true;
     maxGenerations = 10;
     secureBoot.enable = true;
 
+    # Windows goes on the 500GB disk, so once it is installed bootmgfw.efi lives
+    # on THAT disk's ESP, not on this one: boot() resolves to the ESP holding
+    # this config. Replace boot() with the FAT serial of the Windows ESP once it
+    # exists (`lsblk -o NAME,FSTYPE,UUID /dev/nvme1n1p1`), e.g.
+    #   path: guid(1A2B-3C4D):/EFI/Microsoft/Boot/bootmgfw.efi
     extraEntries = ''
       /Windows 11
       protocol: efi
