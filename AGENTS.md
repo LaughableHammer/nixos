@@ -25,7 +25,6 @@ Some inputs are pinned to specific revisions in `flake.nix`. Do not blindly `nix
 
 - `nixpkgs` → `7fd4004d0511991fff3a0524856a9be09e28c5f0`. This is the revision Hyprland `8010b4e` was built against, so Hyprland stays prebuilt and mesa stays in lockstep. Bumping it out of step with the Hyprland input rebuilds mesa/libdrm against a different toolchain than the cached Hyprland, which makes aquamarine fail with `gbm failed to create a device` and Hyprland crash back to the login screen. Update `nixpkgs` and the Hyprland input together.
 - `hyprland` → `8010b4e5c66f97aa82cd5b3332b4ec613779b9a7`, `noctalia` → `e37d7145b95a51b801db9bb20d1c600f35111e0b`. Pinned so `nix flake update` cannot move them unexpectedly; `hyprland` follows the pinned `nixpkgs`.
-- `nixpkgs-llama` → `7a0f122f5090cf4c2ade2a13a0e229d4e19ba71f`. Only feeds `services.llama-cpp`'s ROCm build (`modules/nixos/ai/default.nix`). ROCm llama-cpp is not in any binary cache, so this pin exists to keep that build cached; expect a one-time source build whenever you bump it.
 - `home-manager` and `nix-gaming` follow `nixpkgs` (`inputs.nixpkgs.follows = "nixpkgs"`), so they track the pinned `nixpkgs` automatically.
 - The Pi sandbox Alpine base image is pinned by digest and hash in `modules/home/ai/pi/sandbox/default.nix`; update it with `nix-prefetch-docker` (see the comment there and `sandbox/README.md`).
 

@@ -5,9 +5,6 @@
     # Pinned to the revision Hyprland 8010b4e was built against, so Hyprland
     # stays prebuilt and mesa stays in lockstep (see hyprland input below).
     nixpkgs.url = "github:nixos/nixpkgs/7fd4004d0511991fff3a0524856a9be09e28c5f0";
-    # Separate pin for llama.cpp so its (uncached) ROCm build stays cached and
-    # can be bumped independently of the rest of the system.
-    nixpkgs-llama.url = "github:NixOS/nixpkgs/7a0f122f5090cf4c2ade2a13a0e229d4e19ba71f";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";

@@ -8,8 +8,6 @@
     ../../modules/nixos/software/desktop.nix
     ../../modules/nixos/software/virtualisation.nix
     ../../modules/nixos/software/secure-boot-tools.nix
-    ../../modules/nixos/ai
-    ../../modules/nixos/ai/open-webui.nix
   ];
 
   boot.loader.systemd-boot.enable = false;
@@ -53,9 +51,6 @@
     # The AMD GPU hwmon sensor can appear after this service first starts.
     RestartSec = "5s";
   };
-
-  # Local name for the Open WebUI service on 127.0.0.1:8081.
-  networking.hosts."127.0.0.1" = [ "openwebui.local" ];
 
   services.printing.enable = true;
   services.avahi = {

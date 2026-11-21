@@ -22,31 +22,6 @@ let
   };
 
   models = {
-    providers."llama.cpp".modelOverrides.swift = {
-      compat = {
-        chatTemplateKwargs = {
-          enable_thinking = {
-            "$var" = "thinking.enabled";
-          };
-          preserve_thinking = true;
-          reasoning_effort = {
-            "$var" = "thinking.effort";
-            omitWhenOff = true;
-          };
-        };
-        thinkingFormat = "chat-template";
-      };
-      reasoning = true;
-      thinkingLevelMap = {
-        high = null;
-        low = "low";
-        medium = "medium";
-        minimal = null;
-        off = "off";
-        xhigh = "xhigh";
-      };
-    };
-
     # OpenRouter serves the 1017 snapshot, but neither pi's built-in catalog
     # nor the pi.dev remote overlay lists it, so it is declared here to be
     # selectable and usable as the default model.
