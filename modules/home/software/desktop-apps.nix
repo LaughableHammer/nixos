@@ -13,6 +13,7 @@
     slack
     mpv
     obs-studio
+    heroic
   ];
 
   programs.thunderbird = {
