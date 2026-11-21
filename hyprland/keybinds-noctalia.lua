@@ -1,6 +1,5 @@
 local modifier = "SUPER"
 
-hl.bind(modifier .. " + D", hl.dsp.exec_cmd("noctalia msg panel-toggle launcher"), { description = "Noctalia Launcher" })
 hl.bind(modifier .. " + SHIFT + Return", hl.dsp.exec_cmd("noctalia msg panel-toggle launcher"), { description = "Noctalia Launcher" })
 hl.bind(modifier .. " + M", hl.dsp.exec_cmd("noctalia msg panel-toggle control-center notifications"), { description = "Noctalia Notifications" })
 hl.bind(modifier .. " + V", hl.dsp.exec_cmd("noctalia msg panel-toggle clipboard"), { description = "Noctalia Clipboard" })

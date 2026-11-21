@@ -32,6 +32,7 @@
     shfmt
     nixd
     nixfmt
+    hyprpicker
   ];
 
   # Keep extensions mutable so manually installed extensions remain available.
